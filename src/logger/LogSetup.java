@@ -18,7 +18,7 @@ public class LogSetup {
 	private String logdir;
 	
 	/**
-	 * Initializes the logging for the echo server. Logs are appended to the 
+	 * Initializes the logging for the KV server. Logs are appended to the
 	 * console output and written into a separated server log file at a given 
 	 * destination.
 	 * 
