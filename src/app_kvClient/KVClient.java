@@ -65,9 +65,29 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             } else {
                 printError("Invalid number of parameters!");
             }
-
         } else if(tokens[0].equals("disconnect")) {
             disconnect();
+        } else if(tokens[0].equals("get")) {
+            System.out.println(PROMPT + "Not implemented yet!");
+            if(tokens.length == 2) {
+                try{
+                    String key = tokens[1];
+                } catch (Exception e) {
+                }
+            } else {
+                printError("Invalid number of parameters!");
+            }
+        } else if(tokens[0].equals("put")) {
+            System.out.println(PROMPT + "Not implemented yet!");
+            if(tokens.length == 3) {
+                try{
+                    String key = tokens[1];
+                    String value = tokens[2];
+                } catch (Exception e) {
+                }
+            } else {
+                printError("Invalid number of parameters!");
+            }
         } else if(tokens[0].equals("logLevel")) {
             if(tokens.length == 2) {
                 String level = setLevel(tokens[1]);
@@ -113,6 +133,14 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         sb.append("\t establishes a connection to a server\n");
         sb.append(PROMPT).append("disconnect");
         sb.append("\t\t\t disconnects from the server \n");
+
+        sb.append(PROMPT).append("put <key> <value> \n");
+        sb.append("\t Inserts a key-value pair into the storage server data structures.\n");
+        sb.append("\t Updates (overwrites) the current value with the given value if the server already contains the specified key.\n");
+        sb.append("\t Deletes the entry for the given key if <value> equals null.\n");
+
+        sb.append(PROMPT).append("get <key> \n");
+        sb.append("\t Retrieves the value for the given key from the storage server, if it exists.\n");
 
         sb.append(PROMPT).append("logLevel");
         sb.append("\t\t\t changes the logLevel \n");
