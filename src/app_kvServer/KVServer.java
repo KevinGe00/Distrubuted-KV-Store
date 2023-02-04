@@ -1,6 +1,15 @@
 package app_kvServer;
 
-public class KVServer implements IKVServer {
+import logger.LogSetup;
+import org.apache.log4j.Level;
+
+import java.io.IOException;
+import org.apache.commons.cli.*;
+
+public class KVServer extends Thread implements IKVServer {
+
+	private int port;
+	private String address;
 	/**
 	 * Start KV Server at given port
 	 * @param port given port for storage server to operate
@@ -12,7 +21,7 @@ public class KVServer implements IKVServer {
 	 *           and "LFU".
 	 */
 	public KVServer(int port, int cacheSize, String strategy) {
-		// TODO Auto-generated method stub
+		this.port = port;
 	}
 	
 	@Override
@@ -85,5 +94,76 @@ public class KVServer implements IKVServer {
 	@Override
     public void close(){
 		// TODO Auto-generated method stub
+	}
+
+	private static Options buildOptions() {
+		//	Setting up command line params
+		Options options = new Options();
+
+		Option port = new Option("p", "port", true, "Sets the port of the server");
+		port.setRequired(true);
+		port.setType(Integer.class);
+		options.addOption(port);
+
+		Option address = new Option("a", "address", true, "Which address the server should listen to, default set to localhost");
+		address.setRequired(false);
+		address.setType(String.class);
+		options.addOption(address);
+
+		Option directory = new Option("d", "directory", true, "Directory for files (Put here the files you need to persist the data, the directory is created upfront and you can rely on that it exists)");
+		directory.setRequired(true);
+		directory.setType(String.class);
+		options.addOption(directory);
+
+		Option logfilePath = new Option("l", "logfilePath", true, "Relative path of the logfile, e.g., “echo.log”, default set to be current directory\n");
+		logfilePath.setRequired(false);
+		logfilePath.setType(String.class);
+		options.addOption(logfilePath);
+
+		Option loglevel = new Option("ll", "loglevel", true, "Loglevel, e.g., INFO, ALL, …, default set to be ALL");
+		loglevel.setRequired(false);
+		loglevel.setType(String.class);
+		options.addOption(loglevel);
+
+		return options;
+	}
+
+	/**
+	 * Main entry point for the KVstore server application.
+	 * @param args contains the port number at args[0].
+	 */
+	public static void main(String[] args) {
+		try {
+			new LogSetup("logs/server.log", Level.ALL);
+			Options options = buildOptions();
+
+			CommandLineParser parser = new DefaultParser();
+			HelpFormatter formatter = new HelpFormatter();
+			CommandLine cmd;
+
+			try {
+				cmd = parser.parse(options, args);
+			} catch (ParseException e) {
+				System.out.println(e.getMessage());
+				formatter.printHelp("command", options);
+				return;
+			}
+
+			int portVal = Integer.parseInt(cmd.getOptionValue("p"));
+			String addressVal = cmd.getOptionValue("a", "localhost");
+			String directoryVal = cmd.getOptionValue("d");
+			String logfilePathVal = cmd.getOptionValue("l", ".");
+			String logLevelVal = cmd.getOptionValue("ll", "ALL");
+
+			new KVServer(portVal, 0, "l").start();
+		} catch (IOException e) {
+			System.out.println("Error! Unable to initialize logger!");
+			e.printStackTrace();
+			System.exit(1);
+		} catch (NumberFormatException nfe) {
+			System.out.println("Error! Invalid argument <port>! Not a number!");
+			System.out.println("Usage: Server <port>!");
+			System.exit(1);
+		}
 	}
 }
