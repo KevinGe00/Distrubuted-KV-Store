@@ -10,6 +10,9 @@ public class KVServer extends Thread implements IKVServer {
 
 	private int port;
 	private String address;
+	private String storeDirectory;
+	private String logfilePath;
+	private String logLevel;
 	/**
 	 * Start KV Server at given port
 	 * @param port given port for storage server to operate
@@ -150,12 +153,14 @@ public class KVServer extends Thread implements IKVServer {
 			}
 
 			int portVal = Integer.parseInt(cmd.getOptionValue("p"));
-			String addressVal = cmd.getOptionValue("a", "localhost");
-			String directoryVal = cmd.getOptionValue("d");
-			String logfilePathVal = cmd.getOptionValue("l", ".");
-			String logLevelVal = cmd.getOptionValue("ll", "ALL");
 
-			new KVServer(portVal, 0, "l").start();
+			KVServer server = new KVServer(portVal, 0, "l");
+			server.address = cmd.getOptionValue("a", "localhost");
+			server.storeDirectory = cmd.getOptionValue("d");
+			server.logfilePath = cmd.getOptionValue("l", ".");
+			server.logLevel = cmd.getOptionValue("ll", "ALL");
+
+			server.start();
 		} catch (IOException e) {
 			System.out.println("Error! Unable to initialize logger!");
 			e.printStackTrace();
