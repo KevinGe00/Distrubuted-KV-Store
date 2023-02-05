@@ -19,9 +19,12 @@ public class KVClient implements ClientSocketListener, IKVClient  {
     private BufferedReader stdin;
     private KVStore client = null;
     private boolean stop = false;
-    private LogSetup logSetup;
+    private LogSetup logSetup = new LogSetup("logs/client.log", Level.ALL);;
     private String serverAddress;
     private int serverPort;
+
+    public KVClient() throws IOException {
+    }
 
     public void run() {
         while(!stop) {
@@ -188,7 +191,6 @@ public class KVClient implements ClientSocketListener, IKVClient  {
     public static void main(String[] args) {
         try {
             KVClient client = new KVClient();
-            client.logSetup = new LogSetup("logs/client.log", Level.ALL);
             client.run();
         } catch (IOException e) {
             System.out.println("Error! Unable to initialize logger!");
