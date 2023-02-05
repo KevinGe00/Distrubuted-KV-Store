@@ -38,7 +38,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         }
     }
 
-    private void handleCommand(String cmdLine) {
+    public void handleCommand(String cmdLine) {
         String[] tokens = cmdLine.split("\\s+");
 
         if(tokens[0].equals("quit")) {
@@ -53,7 +53,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                     serverPort = Integer.parseInt(tokens[2]);
                     newConnection(serverAddress, serverPort);
                 } catch(NumberFormatException nfe) {
-                    printError("No valid address. Port must be a number!");
+                    printError("No valid port. Port must be a number!");
                     logger.info("Unable to parse argument <port>", nfe);
                 } catch (UnknownHostException e) {
                     printError("Unknown Host!");
@@ -187,8 +187,8 @@ public class KVClient implements ClientSocketListener, IKVClient  {
      */
     public static void main(String[] args) {
         try {
-            new LogSetup("logs/client.log", Level.ALL);
             KVClient client = new KVClient();
+            client.logSetup = new LogSetup("logs/client.log", Level.ALL);
             client.run();
         } catch (IOException e) {
             System.out.println("Error! Unable to initialize logger!");
