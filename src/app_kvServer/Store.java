@@ -73,4 +73,17 @@ public class Store {
     public boolean containsKey(String key) {
         return store.containsKey(key);
     }
+
+    public void clearStorage(){
+        File directory = new File(this.storeDirectory);
+        File[] files = directory.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (!file.isDirectory()) {
+                    // we only want to delete key-value pairs
+                    file.delete();
+                }
+            }
+        }
+    }
 }
