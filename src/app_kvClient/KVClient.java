@@ -19,7 +19,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
     private BufferedReader stdin;
     private KVStore client = null;
     private boolean stop = false;
-
+    private LogSetup logSetup;
     private String serverAddress;
     private int serverPort;
 
@@ -90,7 +90,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             }
         } else if(tokens[0].equals("logLevel")) {
             if(tokens.length == 2) {
-                String level = setLevel(tokens[1]);
+                String level = logSetup.setLevel(tokens[1]);
                 if(level.equals(LogSetup.UNKNOWN_LEVEL)) {
                     printError("No valid log level!");
                     printPossibleLogLevels();
@@ -159,34 +159,6 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 + "ALL | DEBUG | INFO | WARN | ERROR | FATAL | OFF");
     }
 
-    private String setLevel(String levelString) {
-
-        if(levelString.equals(Level.ALL.toString())) {
-            logger.setLevel(Level.ALL);
-            return Level.ALL.toString();
-        } else if(levelString.equals(Level.DEBUG.toString())) {
-            logger.setLevel(Level.DEBUG);
-            return Level.DEBUG.toString();
-        } else if(levelString.equals(Level.INFO.toString())) {
-            logger.setLevel(Level.INFO);
-            return Level.INFO.toString();
-        } else if(levelString.equals(Level.WARN.toString())) {
-            logger.setLevel(Level.WARN);
-            return Level.WARN.toString();
-        } else if(levelString.equals(Level.ERROR.toString())) {
-            logger.setLevel(Level.ERROR);
-            return Level.ERROR.toString();
-        } else if(levelString.equals(Level.FATAL.toString())) {
-            logger.setLevel(Level.FATAL);
-            return Level.FATAL.toString();
-        } else if(levelString.equals(Level.OFF.toString())) {
-            logger.setLevel(Level.OFF);
-            return Level.OFF.toString();
-        } else {
-            return LogSetup.UNKNOWN_LEVEL;
-        }
-    }
-
 
     @Override
     public void handleStatus(SocketStatus status) {
@@ -215,7 +187,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
      */
     public static void main(String[] args) {
         try {
-            new LogSetup("logs/client.log", Level.OFF);
+            new LogSetup("logs/client.log", Level.ALL);
             KVClient client = new KVClient();
             client.run();
         } catch (IOException e) {

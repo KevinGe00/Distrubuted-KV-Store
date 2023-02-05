@@ -5,15 +5,17 @@ import org.apache.log4j.Level;
 
 import java.io.IOException;
 import org.apache.commons.cli.*;
+import org.apache.log4j.Logger;
 
 public class KVServer extends Thread implements IKVServer {
-
+	private static Logger logger = Logger.getRootLogger();
 	private int port;
 	private String address;
 	private String storeDirectory;
 	private String logfilePath;
 	private String logLevel;
 	private Store store;
+
 	/**
 	 * Start KV Server at given port
 	 *
@@ -24,7 +26,6 @@ public class KVServer extends Thread implements IKVServer {
 	 *                       is full and there is a GET- or PUT-request on a key that is
 	 *                       currently not contained in the cache. Options are "FIFO", "LRU",
 	 *                       and "LFU".
-	 * @param storeDirectory
 	 */
 	public KVServer(int port, int cacheSize, String strategy) {
 		this.port = port;
@@ -142,7 +143,6 @@ public class KVServer extends Thread implements IKVServer {
 	 */
 	public static void main(String[] args) {
 		try {
-			new LogSetup("logs/server.log", Level.ALL);
 			Options options = buildOptions();
 
 			CommandLineParser parser = new DefaultParser();
@@ -166,7 +166,9 @@ public class KVServer extends Thread implements IKVServer {
 			// TODO: give these setters
 			server.address = cmd.getOptionValue("a", "localhost");
 			server.logfilePath = cmd.getOptionValue("l", ".");
-			server.logLevel = cmd.getOptionValue("ll", "ALL");
+
+			String logLevelString = cmd.getOptionValue("ll", "ALL");
+			new LogSetup("logs/server.log", Level.toLevel(logLevelString));
 
 			server.start();
 

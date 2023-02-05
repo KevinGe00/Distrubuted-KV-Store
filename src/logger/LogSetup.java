@@ -62,7 +62,32 @@ public class LogSetup {
 		
 		return valid;
 	}
-	
+	public String setLevel(String levelString) {
+		if(levelString.equals(Level.ALL.toString())) {
+			logger.setLevel(Level.ALL);
+			return Level.ALL.toString();
+		} else if(levelString.equals(Level.DEBUG.toString())) {
+			logger.setLevel(Level.DEBUG);
+			return Level.DEBUG.toString();
+		} else if(levelString.equals(Level.INFO.toString())) {
+			logger.setLevel(Level.INFO);
+			return Level.INFO.toString();
+		} else if(levelString.equals(Level.WARN.toString())) {
+			logger.setLevel(Level.WARN);
+			return Level.WARN.toString();
+		} else if(levelString.equals(Level.ERROR.toString())) {
+			logger.setLevel(Level.ERROR);
+			return Level.ERROR.toString();
+		} else if(levelString.equals(Level.FATAL.toString())) {
+			logger.setLevel(Level.FATAL);
+			return Level.FATAL.toString();
+		} else if(levelString.equals(Level.OFF.toString())) {
+			logger.setLevel(Level.OFF);
+			return Level.OFF.toString();
+		} else {
+			return LogSetup.UNKNOWN_LEVEL;
+		}
+	}
 	public static String getPossibleLogLevels() {
 		return "ALL | DEBUG | INFO | WARN | ERROR | FATAL | OFF";
 	}
