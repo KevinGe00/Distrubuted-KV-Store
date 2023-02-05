@@ -101,8 +101,23 @@ public class KVStore extends Thread implements KVCommInterface {
 
 	@Override
 	public KVMessageObj get(String key) throws Exception {
-		
-		return null;
+		byte[] msgBytes, b1, b2, b3;
+		/* GET */
+		b1 = new byte[] {(byte) StatusType.GET.ordinal()};
+		b3 = (key + '\n').getBytes();
+		b2 = new byte[] {(byte) b3.length};
+		msgBytes = ByteBuffer.allocate(b1.length +
+										b2.length +
+										b3.length).put(b1)
+							   			 .put(b2)
+										 .put(b3)
+										 .array();
+		output.write(msgBytes, 0, msgBytes.length);
+		output.flush();
+		logger.info("SEND GET \t"
+					+ key);
+		/* Receive GET Success / Error */
+		return receiveMessage();
 	}
 
 	public void setRunning(boolean run) {
@@ -124,6 +139,8 @@ public class KVStore extends Thread implements KVCommInterface {
 		kvMsg.setStatus(statusMsg);
 		if (statusMsg == StatusType.GET_ERROR) {
 			/* GET_ERROR */
+			logger.info("RECEIVE GET_ERROR: \t" 
+					+ kvMsg.getStatus());
 			return kvMsg;
 		}
 
@@ -175,30 +192,24 @@ public class KVStore extends Thread implements KVCommInterface {
 		switch (statusMsg) {
 			case GET_SUCCESS:
 				kvMsg.setValue(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
+				logger.info("RECEIVE GET_SUCCESS: \t"
+							+ kvMsg.getStatus() + " "
+							+ kvMsg.getValue());
 				break;
 			case PUT_SUCCESS:
 				kvMsg.setKey(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
+				logger.info("RECEIVE PUT_SUCCESS: \t"
+							+ kvMsg.getStatus() + " "
+							+ kvMsg.getKey());
 				break;
 			case PUT_ERROR:
 				kvMsg.setKey(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
+				logger.info("RECEIVE PUT_ERROR: \t"
+							+ kvMsg.getStatus() + " "
+							+ kvMsg.getKey());
 				break;
 			default:
 				break;
-		}
-		
-		if (statusMsg == StatusType.PUT) {
-			logger.info("RECEIVE \t<" 
-					+ clientSocket.getInetAddress().getHostAddress() + ":" 
-					+ clientSocket.getPort() + ">: '" 
-					+ kvMsg.getStatus() + "' "
-					+ kvMsg.getKey() + " "
-					+ kvMsg.getValue());
-		} else {
-			logger.info("RECEIVE \t<" 
-					+ clientSocket.getInetAddress().getHostAddress() + ":" 
-					+ clientSocket.getPort() + ">: '" 
-					+ kvMsg.getStatus() + "' "
-					+ kvMsg.getKey());
 		}
 		return kvMsg;
 	}
