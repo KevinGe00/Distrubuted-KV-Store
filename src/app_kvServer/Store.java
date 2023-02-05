@@ -4,13 +4,15 @@ import org.apache.log4j.Logger;
 import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
-/**
- *
- */
+
 public class Store {
     private static Logger logger = Logger.getRootLogger();
     private Map<String, String> store;
     private String storeDirectory;
+    /**
+     * Initialize Store which is facilitates the persistence mechanisms
+     * @param storeDirectory relative of where the data should be persisted
+     */
     public Store(String storeDirectory) {
         this.store = new HashMap<>();
         this.storeDirectory = storeDirectory;
@@ -35,7 +37,7 @@ public class Store {
         }
     }
 
-    private String readContent(File file) {
+    public String readContent(File file) {
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             StringBuilder contents = new StringBuilder();
             String line;
