@@ -68,12 +68,33 @@ public class KVServer extends Thread implements IKVServer {
 
 	@Override
     public String getKV(String key) throws Exception{
-		return this.store.get(key);
+		try {
+			String val = this.store.get(key);
+			if (val == null) {
+				String keyNotFoundErr = "Error! Couldn't find key: " + key + " in store.";
+				System.err.println(keyNotFoundErr);
+				logger.error(keyNotFoundErr);
+				throw new Exception(keyNotFoundErr);
+			}
+			return val;
+		} catch (Exception e) {
+			String errMsg = "Error when fetching key: " + key ;
+			System.err.println(errMsg);
+			logger.error(errMsg, e);
+			throw new Exception(errMsg);
+		}
 	}
 
 	@Override
     public void putKV(String key, String value) throws Exception{
-		this.store.put(key, value);
+		try {
+			this.store.put(key, value);
+		} catch (Exception e) {
+			String errMsg = "Error when trying to add key-value pair!" ;
+			System.err.println(errMsg);
+			logger.error(errMsg, e);
+			throw new Exception(errMsg);
+		}
 	}
 
 	@Override

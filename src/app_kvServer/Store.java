@@ -1,4 +1,6 @@
 package app_kvServer;
+import org.apache.log4j.Logger;
+
 import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
@@ -6,6 +8,7 @@ import java.util.Map;
  *
  */
 public class Store {
+    private static Logger logger = Logger.getRootLogger();
     private Map<String, String> store;
     private String storeDirectory;
     public Store(String storeDirectory) {
@@ -21,10 +24,11 @@ public class Store {
             // This check needs to be first, to create non-existing directories
             directory.mkdirs();
         } else if (!directory.isDirectory()) {
+            System.err.println("The directory store path must be a directory.");
             return;
         }
 
-            for (File file : directory.listFiles()) {
+        for (File file : directory.listFiles()) {
             String key = file.getName();
             String value = readContent(file);
             store.put(key, value);
@@ -40,6 +44,9 @@ public class Store {
             }
             return contents.toString();
         } catch (IOException e) {
+            String errMsg = "Error while reading contents of " + file.getAbsolutePath();
+            System.err.println(errMsg);
+            logger.error(errMsg, e);
             return "";
         }
     }
@@ -49,7 +56,9 @@ public class Store {
         try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
             writer.print(value);
         } catch (IOException e) {
-            System.err.println("Unable save key-value pair to disk: " + file.getAbsolutePath());
+            String errMsg = "Unable to save key-value pair to disk: " + file.getAbsolutePath();
+            System.err.println(errMsg);
+            logger.error(errMsg, e);
         }
     }
     public void put(String key, String value) {
