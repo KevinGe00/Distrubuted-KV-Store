@@ -35,7 +35,7 @@ public class Store {
         }
     }
 
-    private String readContent(File file) {
+    public String readContent(File file) {
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             StringBuilder contents = new StringBuilder();
             String line;
