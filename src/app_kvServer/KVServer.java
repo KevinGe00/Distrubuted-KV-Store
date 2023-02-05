@@ -23,7 +23,7 @@ public class KVServer extends Thread implements IKVServer {
 		KILL 	/* killing status, should not use this */
 	}
 
-	private static java.util.logging.Logger logger = Logger.getRootLogger();
+	private static Logger logger = Logger.getRootLogger();
 	private int port;
 	private int cacheSize; 				// not implemented
 	private CacheStrategy strategy; 	// not implemented
@@ -51,20 +51,20 @@ public class KVServer extends Thread implements IKVServer {
 		this.port = port;
 		// optional caching has not been implemented
 		if (cacheSize > 0) {
-			logger.warning("Non-zero cache size specified but not implemented.");
+			logger.warn("Non-zero cache size specified but not implemented.");
 		}
 		this.cacheSize = cacheSize;
 		switch (strategy.toLowerCase()) {
 			case "fifo":
-				logger.warning("FIFO strategy specified but not implemented.");
+				logger.warn("FIFO strategy specified but not implemented.");
 				this.strategy = CacheStrategy.LRU;
 				break;
 			case "lru":
-				logger.warning("LRU strategy specified but not implemented.");
+				logger.warn("LRU strategy specified but not implemented.");
 				this.strategy = CacheStrategy.LRU;
 				break;
 			case "lfu":
-				logger.warning("LFU strategy specified but not implemented.");
+				logger.warn("LFU strategy specified but not implemented.");
 				this.strategy = CacheStrategy.LFU;
 				break;
 			default:
@@ -186,27 +186,23 @@ public class KVServer extends Thread implements IKVServer {
 				} catch (IOException e) {
 					switch (status) {
 						case RUN:
-							logger.warning("Warning! " +
+							logger.warn("Warning! " +
 								"Unable to establish connection. " +
 								"Continue listening...\n" + e);
 							break;
 						case CLOSE:
-							logger.warning("Warning! " +
+							logger.warn("Warning! " +
 								"Instructed to close the server. " +
 								"Closing...");
 							close();
 							break;
 						case KILL:
-							logger.warning("Warning! " +
+							logger.warn("Warning! " +
 								"Instructed to kill the server. " +
 								"Killing...");
 							kill();
 							break;
 					}
-				} catch (InterruptedException e) {
-					logger.error("Error! " +
-						"Crtl-C Interrupt caught. Killing...");
-					kill();
 				} catch (Exception e) {
 					logger.error("Unexpected Error! " +
 						"Killing..." + e);
@@ -290,7 +286,6 @@ public class KVServer extends Thread implements IKVServer {
 				logger.error("Unexpected Error! " +
 						"Unable to close socket on host: '" + address
 						+ "' \tport: " + port, e);
-				throw e;
 			}
 		}
 	}
@@ -311,7 +306,6 @@ public class KVServer extends Thread implements IKVServer {
 			logger.error("Unexpected Error! Exception when "
 					+ "waiting for all client threads to finish. "
 					+ e);
-			throw e;
 		}
 	}
 

@@ -100,7 +100,7 @@ public class KVClientConnection implements Runnable {
 				default:
 					break;
 			}
-		} catch (IOException ioe) {
+		} catch (Exception ioe) {
 			logger.error("Error! Connection could not be established!", ioe);
 		} finally {
 			try {
@@ -121,7 +121,7 @@ public class KVClientConnection implements Runnable {
 	 * @throws IOException some I/O error regarding the output stream 
 	 */
 	public void sendMessage(KVMessageObj msg) throws IOException {
-		byte[] msgBytes, b1, b2;
+		byte[] msgBytes = new byte[0], b1, b2;
 
 		switch (msg.getStatus()) {
 			case GET_SUCCESS:
@@ -140,6 +140,7 @@ public class KVClientConnection implements Runnable {
 							.put(b1).put(b2).array();
 				break;
 			case PUT_ERROR:
+				// Duplicate since multiple case labeling not supported
 				b1 = new byte[] {(byte) msg.getStatus().ordinal()};
 				b2 = msg.getKey().getBytes();
 				msgBytes = ByteBuffer.allocate(b1.length + b2.length)
@@ -217,7 +218,7 @@ public class KVClientConnection implements Runnable {
 		msgBytes = tmp;
 		
 		/* get key */
-		kvMsg.setKey(new String(Arrays.copyofRange(msgBytes, 0, lenBytesKey)));
+		kvMsg.setKey(new String(Arrays.copyOfRange(msgBytes, 0, lenBytesKey)));
 
 		if (statusMsg == StatusType.PUT) {
 			byte b3 = msgBytes[lenBytesKey];
