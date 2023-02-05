@@ -13,15 +13,18 @@ public class KVServer extends Thread implements IKVServer {
 	private String storeDirectory;
 	private String logfilePath;
 	private String logLevel;
+	private Store store;
 	/**
 	 * Start KV Server at given port
-	 * @param port given port for storage server to operate
-	 * @param cacheSize specifies how many key-value pairs the server is allowed
-	 *           to keep in-memory
-	 * @param strategy specifies the cache replacement strategy in case the cache
-	 *           is full and there is a GET- or PUT-request on a key that is
-	 *           currently not contained in the cache. Options are "FIFO", "LRU",
-	 *           and "LFU".
+	 *
+	 * @param port           given port for storage server to operate
+	 * @param cacheSize      specifies how many key-value pairs the server is allowed
+	 *                       to keep in-memory
+	 * @param strategy       specifies the cache replacement strategy in case the cache
+	 *                       is full and there is a GET- or PUT-request on a key that is
+	 *                       currently not contained in the cache. Options are "FIFO", "LRU",
+	 *                       and "LFU".
+	 * @param storeDirectory
 	 */
 	public KVServer(int port, int cacheSize, String strategy) {
 		this.port = port;
@@ -53,8 +56,7 @@ public class KVServer extends Thread implements IKVServer {
 
 	@Override
     public boolean inStorage(String key){
-		// TODO Auto-generated method stub
-		return false;
+		return store.containsKey(key);
 	}
 
 	@Override
@@ -65,13 +67,12 @@ public class KVServer extends Thread implements IKVServer {
 
 	@Override
     public String getKV(String key) throws Exception{
-		// TODO Auto-generated method stub
-		return "";
+		return this.store.get(key);
 	}
 
 	@Override
     public void putKV(String key, String value) throws Exception{
-		// TODO Auto-generated method stub
+		this.store.put(key, value);
 	}
 
 	@Override
@@ -97,6 +98,10 @@ public class KVServer extends Thread implements IKVServer {
 	@Override
     public void close(){
 		// TODO Auto-generated method stub
+	}
+	public void initializeStore(String storeDirectory) {
+		this.storeDirectory = storeDirectory;
+		this.store = new Store(this.storeDirectory);
 	}
 
 	private static Options buildOptions() {
@@ -153,14 +158,31 @@ public class KVServer extends Thread implements IKVServer {
 			}
 
 			int portVal = Integer.parseInt(cmd.getOptionValue("p"));
+			String storeDirectory = cmd.getOptionValue("d");
 
-			KVServer server = new KVServer(portVal, 0, "l");
+			KVServer server = new KVServer(portVal, 10, "FIFO");
+			server.initializeStore(storeDirectory);
+
 			server.address = cmd.getOptionValue("a", "localhost");
-			server.storeDirectory = cmd.getOptionValue("d");
 			server.logfilePath = cmd.getOptionValue("l", ".");
 			server.logLevel = cmd.getOptionValue("ll", "ALL");
 
 			server.start();
+
+			// TODO: FOR TESTING, DELETE LATER
+			try {
+				server.putKV("name", "john");
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+
+			try {
+				System.out.println(server.getKV("name"));
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+
+
 		} catch (IOException e) {
 			System.out.println("Error! Unable to initialize logger!");
 			e.printStackTrace();
