@@ -42,9 +42,9 @@ public class KVStore extends Thread implements KVCommInterface {
 
 			logger.info("Connection established to: " + address + ":" + port);
 		} catch (UnknownHostException e) {
-			throw new Exception("Unknown host: " + address);
+			throw new UnknownHostException("Unknown host: " + address);
 		} catch (IOException e) {
-			throw new Exception("Could not establish a connection to: " + address + ":" + port);
+			throw new IOException("Could not establish a connection to: " + address + ":" + port);
 		}
 	}
 
