@@ -127,24 +127,24 @@ public class KVClientConnection implements Runnable {
 			case GET_SUCCESS:
 				b1 = new byte[] {(byte) msg.getStatus().ordinal()};
 				b2 = msg.getValue().getBytes();
-				msgBytes = ByteBuffer.allocate(b1.length + b2.length)
-							.put(b1).put(b2).array();
+				msgBytes = ByteBuffer.allocate(b1.length + b2.length + 1)
+							.put(b1).put(b2).put((byte)'\n').array();
 				break;
 			case GET_ERROR:
-				msgBytes = new byte[] {(byte) msg.getStatus().ordinal()};
+				msgBytes = new byte[] {(byte) msg.getStatus().ordinal(), (byte)'\n'};
 				break;
 			case PUT_SUCCESS:
 				b1 = new byte[] {(byte) msg.getStatus().ordinal()};
 				b2 = msg.getKey().getBytes();
-				msgBytes = ByteBuffer.allocate(b1.length + b2.length)
-							.put(b1).put(b2).array();
+				msgBytes = ByteBuffer.allocate(b1.length + b2.length + 1)
+							.put(b1).put(b2).put((byte)'\n').array();
 				break;
 			case PUT_ERROR:
 				// Duplicate since multiple case labeling not supported
 				b1 = new byte[] {(byte) msg.getStatus().ordinal()};
 				b2 = msg.getKey().getBytes();
-				msgBytes = ByteBuffer.allocate(b1.length + b2.length)
-							.put(b1).put(b2).array();
+				msgBytes = ByteBuffer.allocate(b1.length + b2.length + 1)
+							.put(b1).put(b2).put((byte)'\n').array();
 				break;
 			default:
 				break;

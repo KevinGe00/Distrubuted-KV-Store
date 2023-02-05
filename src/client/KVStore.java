@@ -2,14 +2,21 @@ package client;
 
 import org.apache.log4j.Logger;
 import shared.messages.KVMessage;
+import shared.messages.KVMessageObj;
+import shared.messages.KVMessage.StatusType;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.net.UnknownHostException;
+<<<<<<< Updated upstream
 import java.util.HashSet;
+=======
+import java.nio.ByteBuffer;
+>>>>>>> Stashed changes
 import java.util.Set;
+import java.util.Arrays;
 
 public class KVStore extends Thread implements KVCommInterface {
 	private Logger logger = Logger.getRootLogger();
@@ -50,7 +57,15 @@ public class KVStore extends Thread implements KVCommInterface {
 
 	@Override
 	public void disconnect() {
-		// TODO Auto-generated method stub
+		try {
+			if (clientSocket != null) {
+				input.close();
+				output.close();
+				clientSocket.close();
+			}
+		} catch (IOException ioe) {
+			logger.error("Error! Unable to tear down connection!", ioe);
+		}
 	}
 
 	public void addListener(ClientSocketListener listener){
@@ -58,18 +73,136 @@ public class KVStore extends Thread implements KVCommInterface {
 	}
 
 	@Override
-	public KVMessage put(String key, String value) throws Exception {
-		// TODO Auto-generated method stub
-		return null;
+	public KVMessageObj put(String key, String value) throws Exception {
+		byte[] msgBytes, b1, b2, b3, b4, b5;
+		/* PUT */
+		b1 = new byte[] {(byte) StatusType.PUT.ordinal()};
+		b3 = key.getBytes();
+		b2 = new byte[] {(byte) b3.length};
+		b5 = (value + '\n').getBytes();
+		b3 = new byte[] {(byte) ((b5.length >> 16) & 0xff),
+						 (byte) ((b5.length >> 8) & 0xff),
+						 (byte) (b5.length & 0xff)};
+		msgBytes = ByteBuffer.allocate(b1.length +
+										b2.length +
+										b3.length +
+										b4.length +
+										b5.length).put(b1)
+							   			 .put(b2)
+										 .put(b3)
+										 .put(b4)
+										 .put(b5)
+										 .array();
+		output.write(msgBytes, 0, msgBytes.length);
+		output.flush();
+		logger.info("SEND PUT \t"
+					+ key + " " 
+					+ value);
+		/* Receive PUT Success / Error */
+		return receiveMessage();
 	}
 
 	@Override
-	public KVMessage get(String key) throws Exception {
-		// TODO Auto-generated method stub
+	public KVMessageObj get(String key) throws Exception {
+		
 		return null;
 	}
 
 	public void setRunning(boolean run) {
 		this.running = run;
+	}
+
+	public KVMessageObj receiveMessage() throws IOException {
+		KVMessageObj kvMsg = new KVMessageObj();
+		int BUFFER_SIZE = 1024;
+		int DROP_SIZE = 1 + 1 + 20 + 3 + 120000;
+
+		int index = 0;
+		byte[] msgBytes = null, tmp = null;
+		byte[] bufferBytes = new byte[BUFFER_SIZE];
+		
+		/* read first 1 char - StatusType from stream */
+		int statusIdx = input.read();
+		StatusType statusMsg = StatusType.values()[statusIdx];
+		kvMsg.setStatus(statusMsg);
+		if (statusMsg == StatusType.GET_ERROR) {
+			/* GET_ERROR */
+			return kvMsg;
+		}
+
+		byte read = (byte) input.read();
+		boolean reading = true;
+		while(/*read != 13  && */ read != 10 && read !=-1 && reading) {/* CR, LF, error */
+			/* if buffer filled, copy to msg array */
+			if(index == BUFFER_SIZE) {
+				if(msgBytes == null){
+					tmp = new byte[BUFFER_SIZE];
+					System.arraycopy(bufferBytes, 0, tmp, 0, BUFFER_SIZE);
+				} else {
+					tmp = new byte[msgBytes.length + BUFFER_SIZE];
+					System.arraycopy(msgBytes, 0, tmp, 0, msgBytes.length);
+					System.arraycopy(bufferBytes, 0, tmp, msgBytes.length,
+							BUFFER_SIZE);
+				}
+
+				msgBytes = tmp;
+				bufferBytes = new byte[BUFFER_SIZE];
+				index = 0;
+			} 
+			
+			/* only read valid characters, i.e. letters and constants */
+			bufferBytes[index] = read;
+			index++;
+			
+			/* stop reading is DROP_SIZE is reached */
+			if(msgBytes != null && msgBytes.length + index >= DROP_SIZE) {
+				reading = false;
+			}
+			
+			/* read next char from stream */
+			read = (byte) input.read();
+		}
+		
+		if(msgBytes == null){
+			tmp = new byte[index];
+			System.arraycopy(bufferBytes, 0, tmp, 0, index);
+		} else {
+			tmp = new byte[msgBytes.length + index];
+			System.arraycopy(msgBytes, 0, tmp, 0, msgBytes.length);
+			System.arraycopy(bufferBytes, 0, tmp, msgBytes.length, index);
+		}
+		
+		msgBytes = tmp;
+		
+		/* get key */
+		switch (statusMsg) {
+			case GET_SUCCESS:
+				kvMsg.setValue(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
+				break;
+			case PUT_SUCCESS:
+				kvMsg.setKey(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
+				break;
+			case PUT_ERROR:
+				kvMsg.setKey(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
+				break;
+			default:
+				break;
+		}
+		
+		if (statusMsg == StatusType.PUT) {
+			logger.info("RECEIVE \t<" 
+					+ clientSocket.getInetAddress().getHostAddress() + ":" 
+					+ clientSocket.getPort() + ">: '" 
+					+ kvMsg.getStatus() + "' "
+					+ kvMsg.getKey() + " "
+					+ kvMsg.getValue());
+		} else {
+			logger.info("RECEIVE \t<" 
+					+ clientSocket.getInetAddress().getHostAddress() + ":" 
+					+ clientSocket.getPort() + ">: '" 
+					+ kvMsg.getStatus() + "' "
+					+ kvMsg.getKey());
+		}
+		return kvMsg;
 	}
 }
