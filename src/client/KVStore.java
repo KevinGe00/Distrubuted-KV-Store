@@ -8,11 +8,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.HashSet;
 import java.util.Set;
 
 public class KVStore extends Thread implements KVCommInterface {
 	private Logger logger = Logger.getRootLogger();
-	private Set<ClientSocketListener> listeners;
+	private Set<ClientSocketListener> listeners = new HashSet<>();
 
 	private boolean running;
 	private String address;
