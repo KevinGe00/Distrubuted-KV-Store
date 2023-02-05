@@ -19,12 +19,16 @@ public interface KVMessage {
 	 * 		null if not key is associated.
 	 */
 	public String getKey();
+
+	public void setKey(String key);
 	
 	/**
 	 * @return the value that is associated with this message, 
 	 * 		null if not value is associated.
 	 */
 	public String getValue();
+
+	public void setValue(String Value);
 	
 	/**
 	 * @return a status string that is used to identify request types, 
@@ -32,6 +36,5 @@ public interface KVMessage {
 	 */
 	public StatusType getStatus();
 	
+	public void setStatus(StatusType status);
 }
-
-

@@ -1,7 +1,6 @@
 package app_kvServer;
 
 import logger.LogSetup;
-import server.ClientConnection;
 
 import org.apache.log4j.Level;
 
