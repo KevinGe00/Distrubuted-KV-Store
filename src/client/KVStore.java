@@ -80,7 +80,7 @@ public class KVStore extends Thread implements KVCommInterface {
 		b3 = key.getBytes();
 		b2 = new byte[] {(byte) b3.length};
 		b5 = (value + '\n').getBytes();
-		b3 = new byte[] {(byte) ((b5.length >> 16) & 0xff),
+		b4 = new byte[] {(byte) ((b5.length >> 16) & 0xff),
 						 (byte) ((b5.length >> 8) & 0xff),
 						 (byte) (b5.length & 0xff)};
 		msgBytes = ByteBuffer.allocate(b1.length +
