@@ -1,20 +1,41 @@
 package app_kvServer;
 
 import logger.LogSetup;
+import server.ClientConnection;
+
 import org.apache.log4j.Level;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.ServerSocket;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Iterator;
+
 import org.apache.commons.cli.*;
 import org.apache.log4j.Logger;
 
+
 public class KVServer extends Thread implements IKVServer {
-	private static Logger logger = Logger.getRootLogger();
+	public enum Status {
+		RUN, 	/* running status */
+		CLOSE, 	/* closing status, main way of closing */
+		KILL 	/* killing status, should not use this */
+	}
+
+	private static java.util.logging.Logger logger = Logger.getRootLogger();
 	private int port;
+	private int cacheSize; 				// not implemented
+	private CacheStrategy strategy; 	// not implemented
 	private String address;
 	private String storeDirectory;
 	private String logfilePath;
 	private String logLevel;
 	private Store store;
+	private ServerSocket serverSocket;
+	private Status status;
+	private ArrayList<Thread> clients = new ArrayList<Thread>();
 
 	/**
 	 * Start KV Server at given port
@@ -29,30 +50,66 @@ public class KVServer extends Thread implements IKVServer {
 	 */
 	public KVServer(int port, int cacheSize, String strategy) {
 		this.port = port;
+		// optional caching has not been implemented
+		if (cacheSize > 0) {
+			logger.warning("Non-zero cache size specified but not implemented.");
+		}
+		this.cacheSize = cacheSize;
+		switch (strategy.toLowerCase()) {
+			case "fifo":
+				logger.warning("FIFO strategy specified but not implemented.");
+				this.strategy = CacheStrategy.LRU;
+				break;
+			case "lru":
+				logger.warning("LRU strategy specified but not implemented.");
+				this.strategy = CacheStrategy.LRU;
+				break;
+			case "lfu":
+				logger.warning("LFU strategy specified but not implemented.");
+				this.strategy = CacheStrategy.LFU;
+				break;
+			default:
+				this.strategy = CacheStrategy.None;
+				break;
+		}
 	}
 	
+	public Status getStatus() {
+		return status;
+	}
+
+	public void setStatus(Status status) {
+		this.status = status;
+	}
+
+	public void setLogfilePath(String logfilePath){
+		this.logfilePath = logfilePath;
+		return;
+	}
+
 	@Override
 	public int getPort(){
-		// TODO Auto-generated method stub
-		return -1;
+		return port;
+	}
+
+	public void setAddress(String address) {
+		this.address = address;
+		return;
 	}
 
 	@Override
     public String getHostname(){
-		// TODO Auto-generated method stub
-		return null;
+		return address;
 	}
 
 	@Override
     public CacheStrategy getCacheStrategy(){
-		// TODO Auto-generated method stub
-		return IKVServer.CacheStrategy.None;
+		return strategy;
 	}
 
 	@Override
     public int getCacheSize(){
-		// TODO Auto-generated method stub
-		return -1;
+		return cacheSize;
 	}
 
 	@Override
@@ -62,7 +119,7 @@ public class KVServer extends Thread implements IKVServer {
 
 	@Override
     public boolean inCache(String key){
-		// TODO Auto-generated method stub
+		// optional caching has not been implemented
 		return false;
 	}
 
@@ -99,7 +156,8 @@ public class KVServer extends Thread implements IKVServer {
 
 	@Override
     public void clearCache(){
-		// TODO Auto-generated method stub
+		// optional caching has not been implemented
+		return;
 	}
 
 	@Override
@@ -109,18 +167,155 @@ public class KVServer extends Thread implements IKVServer {
 
 	@Override
     public void run(){
-		// TODO Auto-generated method stub
+		// main thread of the server
+		initializeServer();
+		
+		if (serverSocket != null) {
+			while (getStatus() == Status.RUN) {
+				try {
+					Socket clientSocket = serverSocket.accept();
+					logger.info("Connected to " 
+						+ clientSocket.getInetAddress().getHostName() 
+						+  " on port " + clientSocket.getPort());
+					
+					housekeepClientThreads();
+					KVClientConnection connection = 
+						new KVClientConnection(clientSocket, this);
+					Thread client = new Thread(connection);
+					clients.add(client);
+					client.start();
+				} catch (IOException e) {
+					switch (status) {
+						case RUN:
+							logger.warning("Warning! " +
+								"Unable to establish connection. " +
+								"Continue listening...\n" + e);
+							break;
+						case CLOSE:
+							logger.warning("Warning! " +
+								"Instructed to close the server. " +
+								"Closing...");
+							close();
+							break;
+						case KILL:
+							logger.warning("Warning! " +
+								"Instructed to kill the server. " +
+								"Killing...");
+							kill();
+							break;
+					}
+				} catch (InterruptedException e) {
+					logger.error("Error! " +
+						"Crtl-C Interrupt caught. Killing...");
+					kill();
+				} catch (Exception e) {
+					logger.error("Unexpected Error! " +
+						"Killing..." + e);
+					kill();
+				}
+			}
+		}
+		logger.info("Server stopped.");
 	}
 
-	@Override
-    public void kill(){
-		// TODO Auto-generated method stub
+	private void initializeServer() {
+    	logger.info("Initialize server ...");
+		// find IP for host
+		InetAddress bindAddr;
+		try {
+			bindAddr = InetAddress.getByName(address);
+		} catch (UnknownHostException e) {
+			logger.error("Error! IP address for host '" + address 
+						 + "' cannot be found.");
+			setStatus(Status.CLOSE);
+			return;
+		}
+		// create socket with IP and port
+    	try {
+            serverSocket = new ServerSocket(port, 0, bindAddr);
+			serverSocket.setReuseAddress(true);
+            logger.info("Server host: " + serverSocket.getInetAddress().getHostName()
+					+ " \tport: " + serverSocket.getLocalPort());    
+        } catch (IOException e) {
+        	logger.error("Error! Cannot open server socket on host: '"
+						+ address + "' \tport: " + port);
+			closeServerSocket();
+			setStatus(Status.CLOSE);
+            return;
+        }
+		setStatus(Status.RUN);
+		return;
+    }
+
+	/* 
+	 * housekeep threads, remove finished threads.
+	 * require exceptions to be caught outside this function.
+	 */
+	private void housekeepClientThreads() {
+		Iterator<Thread> iterClients = clients.iterator();
+		while (iterClients.hasNext()) {
+			Thread client = iterClients.next();
+			if (!client.isAlive()) {
+				iterClients.remove();
+			}
+		}
 	}
 
 	@Override
     public void close(){
-		// TODO Auto-generated method stub
+		// Gracefully stop the server, can perform any additional actions
+		setStatus(Status.CLOSE);;
+		closeServerSocket();
+		joinClientThreads();
 	}
+
+	@Override
+    public void kill(){
+		// Abruptly stop the server without any additional actions
+		// i.e., do NOT perform saving to storage
+		setStatus(Status.KILL);
+        closeServerSocket();
+		joinClientThreads();
+	}
+
+	/*
+	 * close the listening socket of the server.
+	 * should not be directly called in run().
+	 */
+	private void closeServerSocket() {
+		if (serverSocket != null) {
+			try {
+				serverSocket.close();
+				serverSocket = null;
+			} catch (Exception e) {
+				logger.error("Unexpected Error! " +
+						"Unable to close socket on host: '" + address
+						+ "' \tport: " + port, e);
+				throw e;
+			}
+		}
+	}
+
+	/*
+	 * wait for all client threads to complete.
+	 * should not be directly called in run().
+	 */
+	private void joinClientThreads() {
+		try{
+			Iterator<Thread> iterClients = clients.iterator();
+			while (iterClients.hasNext()) {
+				Thread client = iterClients.next();
+				client.join();
+				iterClients.remove();
+			}
+		} catch (Exception e) {
+			logger.error("Unexpected Error! Exception when "
+					+ "waiting for all client threads to finish. "
+					+ e);
+			throw e;
+		}
+	}
+
 	public void initializeStore(String storeDirectory) {
 		this.storeDirectory = storeDirectory;
 		this.store = new Store(this.storeDirectory);
@@ -184,9 +379,8 @@ public class KVServer extends Thread implements IKVServer {
 			KVServer server = new KVServer(portVal, 10, "FIFO");
 			server.initializeStore(storeDirectory);
 
-			// TODO: give these setters
-			server.address = cmd.getOptionValue("a", "localhost");
-			server.logfilePath = cmd.getOptionValue("l", ".");
+			server.setAddress(cmd.getOptionValue("a", "localhost"));
+			server.setLogfilePath(cmd.getOptionValue("l", "."));
 
 			String logLevelString = cmd.getOptionValue("ll", "ALL");
 			new LogSetup("logs/server.log", Level.toLevel(logLevelString));
