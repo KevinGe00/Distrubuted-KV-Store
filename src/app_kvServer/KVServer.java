@@ -163,6 +163,7 @@ public class KVServer extends Thread implements IKVServer {
 			KVServer server = new KVServer(portVal, 10, "FIFO");
 			server.initializeStore(storeDirectory);
 
+			// TODO: give these setters
 			server.address = cmd.getOptionValue("a", "localhost");
 			server.logfilePath = cmd.getOptionValue("l", ".");
 			server.logLevel = cmd.getOptionValue("ll", "ALL");
