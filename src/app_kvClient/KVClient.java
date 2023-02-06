@@ -71,21 +71,23 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         } else if(tokens[0].equals("disconnect")) {
             disconnect();
         } else if(tokens[0].equals("get")) {
-            System.out.println(PROMPT + "Not implemented yet!");
+            // System.out.println(PROMPT + "Not implemented yet!");
             if(tokens.length == 2) {
                 try{
                     String key = tokens[1];
+                    client.get(key);
                 } catch (Exception e) {
                 }
             } else {
                 printError("Invalid number of parameters!");
             }
         } else if(tokens[0].equals("put")) {
-            System.out.println(PROMPT + "Not implemented yet!");
+            //System.out.println(PROMPT + "Not implemented yet!");
             if(tokens.length == 3) {
                 try{
                     String key = tokens[1];
                     String value = tokens[2];
+                    client.put(key, value);
                 } catch (Exception e) {
                 }
             } else {
