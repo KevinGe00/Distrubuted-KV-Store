@@ -121,7 +121,8 @@ public class KVClientConnection implements Runnable {
 	 * @throws IOException some I/O error regarding the output stream 
 	 */
 	public void sendMessage(KVMessageObj msg) throws IOException {
-		byte[] msgBytes = new byte[0], b1, b2;
+		byte[] msgBytes = new byte[0];
+		byte[] b1, b2;
 
 		switch (msg.getStatus()) {
 			case GET_SUCCESS:
@@ -226,8 +227,8 @@ public class KVClientConnection implements Runnable {
 			byte b1 = msgBytes[lenBytesKey+2];
 			int lenBytesValue = ((b3 & 0xff) << 16) | ((b2 & 0xff) << 8) | (b1 & 0xff);
 			kvMsg.setValue(new String(Arrays.copyOfRange(msgBytes,
-													 	lenBytesKey+4, 
-													 	lenBytesKey+4+lenBytesValue)));
+													 	lenBytesKey+3, 
+													 	lenBytesKey+3+lenBytesValue)));
 			logger.info("RECEIVE \t<" 
 					+ clientSocket.getInetAddress().getHostAddress() + ":" 
 					+ clientSocket.getPort() + ">: '" 
@@ -243,7 +244,4 @@ public class KVClientConnection implements Runnable {
 		}
 		return kvMsg;
     }
-	
-
-	
 }
