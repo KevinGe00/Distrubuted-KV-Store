@@ -48,6 +48,7 @@ public class KVClientConnection implements Runnable {
 	 * Close connection once reply was sent.
 	 */
 	public void run() {
+		while(isOpen){
 		try {
 			output = clientSocket.getOutputStream();
 			input = clientSocket.getInputStream();
@@ -103,6 +104,7 @@ public class KVClientConnection implements Runnable {
 		} catch (Exception ioe) {
 			logger.error("Error! Connection could not be established!", ioe);
 		} finally {
+			/*
 			try {
 				if (clientSocket != null) {
 					input.close();
@@ -112,7 +114,9 @@ public class KVClientConnection implements Runnable {
 			} catch (IOException ioe) {
 				logger.error("Error! Unable to tear down connection!", ioe);
 			}
+			*/
 		}
+	}
 	}
 	
 	/**
