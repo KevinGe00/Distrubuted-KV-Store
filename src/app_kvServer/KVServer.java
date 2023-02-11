@@ -379,21 +379,6 @@ public class KVServer extends Thread implements IKVServer {
 			new LogSetup("logs/server.log", Level.toLevel(logLevelString));
 
 			server.start();
-
-			// TODO: FOR TESTING, DELETE LATER
-			try {
-				server.putKV("name", "john");
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-
-			try {
-				System.out.println(server.getKV("name"));
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-
-
 		} catch (IOException e) {
 			System.out.println("Error! Unable to initialize logger!");
 			e.printStackTrace();
