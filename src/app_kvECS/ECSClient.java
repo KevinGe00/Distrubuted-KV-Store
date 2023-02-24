@@ -14,9 +14,7 @@ import java.net.ServerSocket;
 import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public class ECSClient implements IECSClient {
     private static Logger logger = Logger.getRootLogger();
@@ -26,7 +24,8 @@ public class ECSClient implements IECSClient {
     private boolean running = false;
     private ServerSocket serverSocket;
     private HashMap<BigInteger, IECSNode> hashRing = new HashMap<>();
-
+    //mapping of KVServers (defined by their IP:Port) and the associated range of hash value
+    private HashMap<String, List<BigInteger>> metadata = new HashMap<>();
     public ECSClient(String address, int port) {
         this.address = address;
         this.port = port;
@@ -133,7 +132,69 @@ public class ECSClient implements IECSClient {
         return null;
     }
 
-    private void addNewServerNodeToHashRing(String serverHost, int serverPort) {
+    /**
+     * @param fullAddress IP:port of newly added server
+     * @param position the hash of fullAddress, used to determine the position of this node on the hashring
+     */
+    public void updateMetadataWithNewNode (String fullAddress, BigInteger position) {
+        if (metadata.isEmpty()) {
+            // add dummy node to handle wrap-around
+            List<BigInteger> range1 = Arrays.asList(BigInteger.ZERO, position);
+            metadata.put("dummy", range1);
+
+            // insert new node into metadata mapping
+            List<BigInteger> range2 = Arrays.asList(position, BigInteger.ZERO);
+            metadata.put(fullAddress, range2);
+        } else {
+            // sort nodes in metadata map by the start of their key-range
+            List<Map.Entry<String, List<BigInteger>>> sortedEntries = new ArrayList<>(metadata.entrySet());
+            Collections.sort(sortedEntries, new Comparator<Map.Entry<String, List<BigInteger>>>() {
+                @Override
+                public int compare(Map.Entry<String, List<BigInteger>> e1, Map.Entry<String, List<BigInteger>> e2) {
+                    BigInteger first1 = e1.getValue().get(0);
+                    BigInteger first2 = e2.getValue().get(0);
+                    return first1.compareTo(first2);
+                }
+            });
+
+            BigInteger prevStart = BigInteger.ZERO;
+            boolean inserted = false;
+            // Iterate through the sorted map entries
+            for (Map.Entry<String, List<BigInteger>> entry : sortedEntries) {
+                String key = entry.getKey();
+                BigInteger rangeStart = entry.getValue().get(0);
+                int comparisonResult = rangeStart.compareTo(position);
+                if (comparisonResult > 0) {
+                    // start of key range for current entry is larger than new server's position
+                    List<BigInteger> range = Arrays.asList(position, prevStart);
+                    metadata.put(fullAddress, range);
+
+                    // cut the range of the successor node, which is the current entry
+                    List<BigInteger> successorRange = entry.getValue();
+                    successorRange.set(1, position);
+                    metadata.put(key, successorRange);
+
+                    inserted = true;
+                    break;
+                }
+                prevStart = rangeStart;
+            }
+
+            if (!inserted) {
+                // new node is predecessor of dummy node at 0 since it is the one with the largest hash value
+                List<BigInteger> range = Arrays.asList(position, prevStart);
+                metadata.put(fullAddress, range);
+
+                // cut the range of the successor node, which is the dummy node
+                Map.Entry<String, List<BigInteger>> dummy = sortedEntries.get(0);
+                List<BigInteger> successorRange = dummy.getValue();
+                successorRange.set(1, position);
+                metadata.put("dummy", successorRange);
+            };
+        }
+    }
+
+    private BigInteger addNewServerNodeToHashRing(String serverHost, int serverPort) {
         try {
             String fullAddress =  serverHost + ":" + serverPort;
 
@@ -147,6 +208,7 @@ public class ECSClient implements IECSClient {
             ECSNode node = new ECSNode(nodeName, serverHost, serverPort);
 
             hashRing.put(hashInt, node);
+            return hashInt;
         } catch (NoSuchAlgorithmException e) {
             logger.error(e);
             throw new RuntimeException(e);
@@ -203,6 +265,23 @@ public class ECSClient implements IECSClient {
             String logLevelString = cmd.getOptionValue("ll", "ALL");
             new LogSetup("logs/ecs.log", Level.toLevel(logLevelString));
 
+            // testing, remove later
+            BigInteger one = ecsClient.addNewServerNodeToHashRing("localhost", 5000);
+            ecsClient.updateMetadataWithNewNode("localhost" + ":" + 5000, one);
+            BigInteger two = ecsClient.addNewServerNodeToHashRing("localhost", 6000);
+            ecsClient.updateMetadataWithNewNode("localhost" + ":" + 6000, two);
+            BigInteger three = ecsClient.addNewServerNodeToHashRing("localhost", 7000);
+            ecsClient.updateMetadataWithNewNode("localhost" + ":" + 7000, three);
+            for (Map.Entry<BigInteger, IECSNode> entry : ecsClient.hashRing.entrySet()) {
+                BigInteger key = entry.getKey();
+                String value = String.valueOf(entry.getValue().getNodePort());
+                System.out.println(key + value);
+            }
+            for (Map.Entry<String, List<BigInteger>> entry : ecsClient.metadata.entrySet()) {
+                String key = entry.getKey();
+                List<BigInteger> value = entry.getValue();
+                System.out.println(key + ": " + value);
+            }
         } catch (NumberFormatException nfe) {
             System.out.println("Error! Invalid argument <port>! Not a number!");
             System.out.println("Usage: Server <port>!");
