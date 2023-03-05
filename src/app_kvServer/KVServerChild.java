@@ -86,7 +86,7 @@ public class KVServerChild implements Runnable {
 					|| (serStatus == SerStatus.SHUTTING_DOWN)) {
 					/*
 					 * Server is stopped or shutting down,
-					 * reply with 'server stopped' and full message received.
+					 * reply GET with 'server stopped' and full GET message.
 					 */
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setStatus(StatusType.SERVER_STOPPED);
@@ -102,14 +102,12 @@ public class KVServerChild implements Runnable {
 					|| (serStatus == SerStatus.SHUTTING_DOWN)) {
 					/*
 					 * Server is stopped or shutting down,
-					 * reply with 'server stopped' and full message received.
+					 * reply PUT with 'server stopped' and full PUT message.
 					 */
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setStatus(StatusType.SERVER_STOPPED);
 					kvMsgSend.setKey(keyRecv);
-					if (valueRecv != null) {
-						kvMsgSend.setValue(valueRecv);
-					}
+					kvMsgSend.setValue(valueRecv);
 					if (!sendKVMessage(kvMsgSend)) {
 						close();
 						return;
@@ -118,14 +116,12 @@ public class KVServerChild implements Runnable {
 				} else if (serStatus == SerStatus.WRITE_LOCK) {
 					/*
 					 * Server is locked for write, thus no PUT,
-					 * reply with 'server stopped' and full message received.
+					 * reply PUT with 'server stopped' and full PUT message.
 					 */
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setStatus(StatusType.SERVER_WRITE_LOCK);
 					kvMsgSend.setKey(keyRecv);
-					if (valueRecv != null) {
-						kvMsgSend.setValue(valueRecv);
-					}
+					kvMsgSend.setValue(valueRecv);
 					if (!sendKVMessage(kvMsgSend)) {
 						close();
 						return;
@@ -136,13 +132,12 @@ public class KVServerChild implements Runnable {
 			// 2. normal KV response to client
 			switch (statusRecv) {
 				case GET: {
-					/* GET */
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setKey(keyRecv);
 					if (!ptrKVServer.inStorage(keyRecv)) {
 						/*
 						 * Key does not exist in storage,
-						 * reply with 'get error'
+						 * reply GET with 'get error' and Key
 						 */
 						kvMsgSend.setStatus(StatusType.GET_ERROR);
 						if (!sendKVMessage(kvMsgSend)) {
@@ -152,21 +147,11 @@ public class KVServerChild implements Runnable {
 						continue;
 					}
 					try {
-						if (!kvMsgSend.setValue(ptrKVServer.getKV(keyRecv))) {
-							/*
-							 * Value found cannot be sent,
-							 * reply with 'get error'
-							 */
-							kvMsgSend.setStatus(StatusType.GET_ERROR);
-							if(!sendKVMessage(kvMsgSend)) {
-								close();
-								return;
-							}
-							continue;
-						}
+						String valueSend = ptrKVServer.getKV(keyRecv);
+						kvMsgSend.setValue(valueSend);
 						/*
 						 * Value found,
-						 * reply with 'get success'
+						 * reply GET with 'get success' and Key-Value pair
 						 */
 						kvMsgSend.setStatus(StatusType.GET_SUCCESS);
 						if (!sendKVMessage(kvMsgSend)) {
@@ -177,7 +162,7 @@ public class KVServerChild implements Runnable {
 					} catch (Exception e) {
 						/*
 						 * GET processing error,
-						 * reply with 'get error'
+						 * reply with 'get error' and Key
 						 */
 						logger.error("GET processing error at child of server #"
 									+ serverPort+ " connected to IP: '"
@@ -193,18 +178,115 @@ public class KVServerChild implements Runnable {
 				case PUT: {
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setKey(keyRecv);
+					/* DELETE */
 					if (valueRecv == null) {
-						/* DELETE */
 						if (!ptrKVServer.inStorage(keyRecv)) {
-							kvMsgSend.setStatus(statusRecv);
+							/*
+							 * KV pair requested to delete does not exist,
+							 * reply PUT(DELETE) with 'delete success' and Key
+							 */
+							kvMsgSend.setStatus(StatusType.DELETE_SUCCESS);
+							if (!sendKVMessage(kvMsgSend)) {
+								close();
+								return;
+							}
+							continue;
+						}
+						try {
+							String valueSend = ptrKVServer.getKV(keyRecv);
+							kvMsgSend.setValue(valueSend);
+							ptrKVServer.putKV(keyRecv, null);
+							/*
+							 * KV pair requested to delete existed and has been deleted,
+							 * reply PUT(DELETE) with 'delete success' and KV pair
+							 */
+							kvMsgSend.setStatus(StatusType.DELETE_SUCCESS);
+							if (!sendKVMessage(kvMsgSend)) {
+								close();
+								return;
+							}
+							continue;
+						} catch (Exception e) {
+							/*
+							 * PUT(DELETE) processing error,
+							 * reply with 'delete error' and Key (or KV pair)
+							 */
+							logger.error("PUT(DELETE) processing error at child of "
+										+ "server #" + serverPort+ " connected to IP: '"
+										+ responseIP + "' \t port: "+ responsePort, e);
+							kvMsgSend.setStatus(StatusType.DELETE_ERROR);
+							if (!sendKVMessage(kvMsgSend)) {
+								close();
+								return;
+							}
+							continue;
 						}
 					}
-					break;
+					/* UPDATE */
+					if (ptrKVServer.inStorage(keyRecv)) {
+						try {
+							kvMsgSend.setValue(valueRecv);
+							ptrKVServer.putKV(keyRecv, valueRecv);
+							/*
+							 * Key exists in storage and has been updated with new Value,
+							 * reply PUT(UPDATE) with 'put update' and new KV pair
+							 */
+							kvMsgSend.setStatus(StatusType.PUT_UPDATE);
+							if (!sendKVMessage(kvMsgSend)) {
+								close();
+								return;
+							}
+							continue;
+						} catch (Exception e) {
+							/*
+							 * PUT(UPDATE) processing error,
+							 * reply with 'put error' and KV pair
+							 */
+							logger.error("PUT(UPDATE) processing error at child of "
+										+ "server #" + serverPort+ " connected to IP: '"
+										+ responseIP + "' \t port: "+ responsePort, e);
+							kvMsgSend.setStatus(StatusType.PUT_ERROR);
+							if (!sendKVMessage(kvMsgSend)) {
+								close();
+								return;
+							}
+							continue;
+						}
+					}
+					/* PUT */
+					try {
+						kvMsgSend.setValue(valueRecv);
+						ptrKVServer.putKV(keyRecv, valueRecv);
+						/*
+						 * KV pair has been put into storage,
+						 * reply PUT with 'put success' and the same KV pair
+						 */
+						kvMsgSend.setStatus(StatusType.PUT_SUCCESS);
+						if (!sendKVMessage(kvMsgSend)) {
+							close();
+							return;
+						}
+						continue;
+					} catch (Exception e) {
+						/*
+						 * PUT processing error,
+						 * reply with 'put error' and KV pair
+						 */
+						logger.error("PUT processing error at child of "
+									+ "server #" + serverPort+ " connected to IP: '"
+									+ responseIP + "' \t port: "+ responsePort, e);
+						kvMsgSend.setStatus(StatusType.PUT_ERROR);
+						if (!sendKVMessage(kvMsgSend)) {
+							close();
+							return;
+						}
+						continue;
+					}
 				}
 				default: {
 					logger.error("Invalid message <" + statusRecv.name()
 								+ "> received at child socket of server #"
-								+ serverPort+ " connected to IP: '"+ responseIP
+								+ serverPort + " connected to IP: '"+ responseIP
 								+ "' \t port: " + responsePort);
 					close();
 					return;

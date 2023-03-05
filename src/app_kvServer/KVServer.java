@@ -180,8 +180,7 @@ public class KVServer extends Thread implements IKVServer {
 				// DELETE
 				cmd_specific = "(DELETE)";
 				store.delete(key);
-			}
-			if (store.containsKey(key)) {
+			} else if (store.containsKey(key)) {
 				// UPDATE
 				cmd_specific = "(UPDATE)";
 				store.update(key, value);
