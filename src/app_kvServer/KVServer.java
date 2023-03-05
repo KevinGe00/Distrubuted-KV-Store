@@ -37,6 +37,9 @@ public class KVServer extends Thread implements IKVServer {
 	private ArrayList<ChildObject> childObjects;
 	private ServerSocket serverSocket;
 
+	// latest server metadata
+    private String metadata;
+
 	/**
 	 * Initialize a new, stopped KVServer at port
 	 * @param port 		port of server
@@ -48,6 +51,7 @@ public class KVServer extends Thread implements IKVServer {
 		store = null;
 		childObjects = null;
 		serverSocket = null;
+		metadata = null;
 	}
 	public KVServer(int port, int cacheSize, String strategy) {
 		status = SerStatus.STOPPED;
@@ -56,6 +60,25 @@ public class KVServer extends Thread implements IKVServer {
 		store = null;
 		childObjects = null;
 		serverSocket = null;
+		metadata = null;
+	}
+
+	/* Server metadata */
+	/**
+	 * Set server's metadata, 
+	 * @param metatdata metadata from ECS server
+	 * @return true for success, false otherwise
+	 */
+	public synchronized boolean setMetadata(String metatdata) {
+		this.metadata = metatdata;
+		return true;
+	}
+	/**
+	 * Get server's latest metadata.
+	 * @return
+	 */
+	public String getMetadata() {
+		return metadata;
 	}
 
 	/* Server status enum */
@@ -208,7 +231,8 @@ public class KVServer extends Thread implements IKVServer {
 			return;
 		}
 		
-		setSerStatus(SerStatus.RUNNING);
+		setSerStatus(SerStatus.RUNNING); 	// comment this line out when ECS is in control
+
 		loop: while (true) {
 			// catch all unexpected exceptions, only exit with break
 			try {

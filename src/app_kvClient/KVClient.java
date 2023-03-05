@@ -13,10 +13,9 @@ import java.io.InputStreamReader;
 import java.net.UnknownHostException;
 
 import shared.messages.KVMessage;
-import shared.messages.KVMessageInterface.StatusType;;
+import shared.messages.KVMessageInterface.StatusType;
 
 public class KVClient implements ClientSocketListener, IKVClient  {
-
     private static Logger logger = Logger.getRootLogger();
     private static final String PROMPT = "KVStoreClient> ";
     private BufferedReader stdin;
@@ -25,6 +24,9 @@ public class KVClient implements ClientSocketListener, IKVClient  {
     private LogSetup logSetup = new LogSetup("logs/client.log", Level.ALL);;
     private String serverAddress;
     private int serverPort;
+
+    // cached server metadata
+    private String metadata = null;
 
     public KVClient() throws IOException {
     }
@@ -80,6 +82,9 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 try{
                     String key = tokens[1];
                     KVMessage msg = client.get(key);
+                    // check if it is keyrange
+
+
                     switch (msg.getStatus()) {
                         case GET_SUCCESS:
                             System.out.println(PROMPT + "Got value: "
@@ -87,6 +92,11 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                             break;
                         case GET_ERROR:
                             printError("Server cannot get value for key: <"
+                                       + msg.getKey()
+                                       + ">");
+                            break;
+                        case SERVER_STOPPED:
+                            printError("Server is not running, cannot get key: <"
                                        + msg.getKey()
                                        + ">");
                             break;
@@ -119,6 +129,10 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             }
             try {
                 KVMessage msg = client.put(key, value);
+                // check if it is keyrange
+
+
+
                 switch (msg.getStatus()) {
                     case PUT_SUCCESS:
                         System.out.println(PROMPT + "PUT succeeded.");
@@ -140,6 +154,18 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                                    + "for key: <"
                                    + msg.getKey()
                                    + ">");
+                        break;
+                    case SERVER_STOPPED:
+                        printError("Server is not running, cannot put key-value"
+                                    + " pair: <" + msg.getValue() + ">-<"
+                                    + msg.getValue()
+                                    + ">");
+                        break;
+                    case SERVER_WRITE_LOCK:
+                        printError("Server is locked for WRITE, cannot put key"
+                                    + "-value pair: <" + msg.getValue() + ">-<"
+                                    + msg.getValue()
+                                    + ">");
                         break;
                     default:
                         printError("Unexpected server response: <"
@@ -167,6 +193,29 @@ public class KVClient implements ClientSocketListener, IKVClient  {
 
         } else if(tokens[0].equals("help")) {
             printHelp();
+        } else if(tokens[0].equals("keyrange")) {
+            /* KEYRANGE command */
+            try {
+                KVMessage msg = client.getKeyrange();
+                switch (msg.getStatus()) {
+                    case KEYRANGE_SUCCESS:
+                        System.out.println(PROMPT + "Keyrange: " + msg.getValue());
+                        metadata = msg.getValue();
+                        break;
+                    case SERVER_STOPPED:
+                        printError("Server is not running, ignored 'Keyrange'");
+                        break;
+                    default: 
+                        printError("Unexpected server response: <"
+                                   + msg.getStatus().name()
+                                   + ">");
+                        logger.error("The KVMessage from server is not for"
+                                    + " 'Keyrange'.");
+                }
+            } catch (Exception e) {
+                printError("'Keyrange' command failure.");
+                logger.error("Client's 'Keyrange' command failed.", e);
+            }
         } else {
             printError("Unknown command");
             printHelp();
@@ -187,6 +236,22 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         }
     }
 
+    /**
+     * Check if server's response is NOT_RESPONSIBLE, and re-connect if needed
+     * @param kvMsg KVMessage received from recent PUT or GET request
+     * @return true for needing to request again, false for 
+     */
+    private boolean needToRequestAgain(KVMessage kvMsg){
+        if (kvMsg.getStatus() != StatusType.SERVER_NOT_RESPONSIBLE) {
+            return false;
+        }
+        // to-do
+
+
+        
+        return true;
+    }
+
     private void printHelp() {
         StringBuilder sb = new StringBuilder();
         sb.append(PROMPT).append("KV-STORE CLIENT HELP (Usage):\n");
@@ -205,6 +270,9 @@ public class KVClient implements ClientSocketListener, IKVClient  {
 
         sb.append(PROMPT).append("get <key> \n");
         sb.append("\t Retrieves the value for the given key from the storage server, if it exists.\n");
+
+        sb.append(PROMPT).append("keyrange \n");
+        sb.append("\t Retrieves latest server keyrange metadata from a running storage server.\n");
 
         sb.append(PROMPT).append("logLevel");
         sb.append("\t\t\t changes the logLevel \n");

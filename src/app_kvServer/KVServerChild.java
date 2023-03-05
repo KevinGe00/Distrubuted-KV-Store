@@ -79,8 +79,39 @@ public class KVServerChild implements Runnable {
 			StatusType statusRecv = kvMsgRecv.getStatus();
 			String keyRecv = kvMsgRecv.getKey();
 			String valueRecv = kvMsgRecv.getValue();
-			// 1. server-status response for client request
+			// get server status
 			SerStatus serStatus = ptrKVServer.getSerStatus();
+			// 0. command-type response (client's GET_KEYRANGE, and ECS' commands)
+			if (statusRecv == StatusType.GET_KEYRANGE) {
+				/* KEYRANGE command */
+				if ((serStatus == SerStatus.STOPPED) || (serStatus == SerStatus.SHUTTING_DOWN)) {
+					KVMessage kvMsgSend = new KVMessage();
+					/*
+					 * Client commands 'keyrange', but server is stopped or shutting down,
+					 * reply with 'server stopped', as specified in the module
+					 */
+					kvMsgSend.setStatus(StatusType.SERVER_STOPPED);
+					if (!sendKVMessage(kvMsgSend)) {
+						close();
+						return;
+					}
+					continue;
+				}
+				KVMessage kvMsgSend = new KVMessage();
+				kvMsgSend.setValue(ptrKVServer.getMetadata());
+				/*
+				 * Client commands 'keyrange', server is not stopped or shutting down,
+				 * reply with 'keyrange success' and latest server metadata
+				 */
+				kvMsgSend.setStatus(StatusType.KEYRANGE_SUCCESS);
+				if (!sendKVMessage(kvMsgSend)) {
+					close();
+					return;
+				}
+				continue;
+			}
+
+			// 1. server-status response for client request
 			if (statusRecv == StatusType.GET) {
 				if ((serStatus == SerStatus.STOPPED)
 					|| (serStatus == SerStatus.SHUTTING_DOWN)) {
@@ -129,6 +160,7 @@ public class KVServerChild implements Runnable {
 					continue;
 				}
 			}
+			
 			// 2. normal KV response to client
 			switch (statusRecv) {
 				case GET: {
