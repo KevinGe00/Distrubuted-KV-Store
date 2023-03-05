@@ -269,6 +269,8 @@ public class KVServer extends Thread implements IKVServer {
 			public void run()
 			{
 				close();
+				logger.debug("Shutdown hook thread exited.");
+				return;
 			}
 		});
 		// ensure status is STOPPED
@@ -348,7 +350,7 @@ public class KVServer extends Thread implements IKVServer {
 	}
 
 	@Override
-    public void kill(){
+    public synchronized void kill(){
 		// immediately returns; should not call this, use close() instead.
 		logger.debug("Server #" + getPort() + " is being KILLED.");
 		setSerStatus(SerStatus.SHUTTING_DOWN);
@@ -357,7 +359,7 @@ public class KVServer extends Thread implements IKVServer {
 	}
 
 	@Override
-    public void close(){
+    public synchronized void close(){
 		logger.debug("Server #" + getPort() + " is shutting down.");
 		// for internal shutdown, SerStatus should be SHUTTING_DOWN before this.
 		setSerStatus(SerStatus.SHUTTING_DOWN);
