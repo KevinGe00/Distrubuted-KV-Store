@@ -19,6 +19,8 @@ import shared.messages.KVMessageInterface.StatusType;
 
 
 public class KVServer extends Thread implements IKVServer {
+	private String dirStore;
+
 	/**
 	 * Datatype containing a pair of response socket and thread.
 	 */
@@ -78,6 +80,10 @@ public class KVServer extends Thread implements IKVServer {
 		return status;
 	}
 
+	public String getDirStore() {
+		return dirStore;
+	}
+
 	/* Port */
 	@Override
 	public int getPort(){
@@ -109,6 +115,7 @@ public class KVServer extends Thread implements IKVServer {
 		}
 		try {
 			store = new Store(dirStore);
+			this.dirStore = dirStore;
 		} catch (Exception e) {
 			logger.error("Exception when initializing server #" + getPort()
 						+ " disk storage.", e);
