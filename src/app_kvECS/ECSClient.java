@@ -210,7 +210,7 @@ public class ECSClient implements IECSClient {
                 metadata.put(fullAddress, range);
 
                 // TODO: once we connect servers to ecs, save servers (or at least their directory) to use here
-//                moveFiles(oldServer, newServer, )
+//                moveFiles(oldServer, newServer, range)
 
                 // cut the range of the successor node, which is the dummy node
                 Map.Entry<String, List<BigInteger>> dummy = sortedEntries.get(0);
@@ -325,7 +325,7 @@ public class ECSClient implements IECSClient {
                     List<BigInteger> successorRange = entry.getValue();
                     successorRange.set(1, nodeToRemoveRangeEnd);
                     metadata.put(key, successorRange);
-    //                moveFiles(oldServer, newServer, )
+    //                moveFiles(successor, serverToRemove, Arrays.asList(nodeToRemoveRangeStart, nodeToRemoveRangeEnd))
                     break;
                 }
             }
