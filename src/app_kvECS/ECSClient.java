@@ -1,6 +1,6 @@
 package app_kvECS;
 
-import app_kvServer.KVClientConnection;
+import app_kvServer.KVServerChild;
 import app_kvServer.KVServer;
 import ecs.ECSNode;
 import ecs.IECSNode;
@@ -9,6 +9,7 @@ import org.apache.commons.cli.*;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
+import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.net.InetAddress;
@@ -17,6 +18,9 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -68,8 +72,6 @@ public class ECSClient implements IECSClient {
             return;
         }
     }
-
-
 
     /*
      * close the listening socket of the server.
@@ -147,6 +149,33 @@ public class ECSClient implements IECSClient {
         return null;
     }
 
+    // TODO: call this during add server hook
+    // return true on success, otherwise false
+    private boolean addNewNode(String serverHost, int serverPort) {
+        try {
+            BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort);
+            updateMetadataWithNewNode("localhost" + ":" + 5000, position);
+
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // TODO: call this during add shutdown hook
+    // return true on success, otherwise false
+    private boolean removeNode(String serverHost, int serverPort) {
+        try {
+            removeServerNodeFromHashRing(serverHost, serverPort);
+            updateMetadataAfterNodeRemoval("localhost" + ":" + 5000);
+
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+
     /**
      * @param fullAddress IP:port of newly added server
      * @param position the hash of fullAddress, used to determine the position of this node on the hashring
@@ -161,18 +190,10 @@ public class ECSClient implements IECSClient {
             List<BigInteger> range2 = Arrays.asList(position, BigInteger.ZERO);
             metadata.put(fullAddress, range2);
         } else {
-            // sort nodes in metadata map by the start of their key-range
-            List<Map.Entry<String, List<BigInteger>>> sortedEntries = new ArrayList<>(metadata.entrySet());
-            Collections.sort(sortedEntries, new Comparator<Map.Entry<String, List<BigInteger>>>() {
-                @Override
-                public int compare(Map.Entry<String, List<BigInteger>> e1, Map.Entry<String, List<BigInteger>> e2) {
-                    BigInteger first1 = e1.getValue().get(0);
-                    BigInteger first2 = e2.getValue().get(0);
-                    return first1.compareTo(first2);
-                }
-            });
+            List<Map.Entry<String, List<BigInteger>>> sortedEntries = getSortedMetadata();
 
             BigInteger prevStart = BigInteger.ZERO;
+            ECSNode prevNode = null;
             boolean inserted = false;
             // Iterate through the sorted map entries
             for (Map.Entry<String, List<BigInteger>> entry : sortedEntries) {
@@ -200,6 +221,9 @@ public class ECSClient implements IECSClient {
                 List<BigInteger> range = Arrays.asList(position, prevStart);
                 metadata.put(fullAddress, range);
 
+                // TODO: once we connect servers to ecs, save servers (or at least their directory) to use here
+//                moveFiles(oldServer, newServer, range)
+
                 // cut the range of the successor node, which is the dummy node
                 Map.Entry<String, List<BigInteger>> dummy = sortedEntries.get(0);
                 List<BigInteger> successorRange = dummy.getValue();
@@ -209,25 +233,130 @@ public class ECSClient implements IECSClient {
         }
     }
 
-    private BigInteger addNewServerNodeToHashRing(String serverHost, int serverPort) {
-        try {
-            String fullAddress =  serverHost + ":" + serverPort;
+    //    Transfers persisted files with key that hash to a value within range from newServerSuccessor to new server
+    private void moveFiles(KVServer newServerSuccessor, KVServer newServer, List<BigInteger> range) {
+        String sourceFolder = newServerSuccessor.getDirStore();
+        String destinationFolder = newServer.getDirStore();
 
+        File srcFolder = new File(sourceFolder);
+        File destFolder = new File(destinationFolder);
+
+        File[] files = srcFolder.listFiles();
+
+        // Copy each files with range the source folder to the destination folder
+        for (File file : files) {
+            try {
+                BigInteger hash = new BigInteger(file.getName(), 16);
+                BigInteger lower = range.get(0);
+                BigInteger upper = range.get(1);
+
+                if (hash.compareTo(lower) >= 0 && hash.compareTo(upper) <= 0) {
+                    Path srcPath = file.toPath();
+                    Path destPath = new File(destFolder, file.getName()).toPath();
+                    Files.copy(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("Copied file " + file.getName() + " to " + destFolder.getAbsolutePath());
+                }
+                // TODO: call the servers' initialize() again after file transfer
+
+            } catch (IOException e) {
+                System.out.println("Failed to copy file " + file.getName() + " due to " + e.getMessage());
+            }
+        }
+
+        // Only delete relevant files after the transfer is fully complete so able to serve read requests from the successor in the meantime
+        for (File file : files) {
+            try {
+                BigInteger hash = new BigInteger(file.getName(), 16);
+                BigInteger lower = range.get(0);
+                BigInteger upper = range.get(1);
+
+                if (hash.compareTo(lower) >= 0 && hash.compareTo(upper) <= 0) {
+                    file.delete();
+                    System.out.println("Deleted file " + file.getName() + " from " + srcFolder.getAbsolutePath());
+                }
+
+            } catch (Exception e) {
+                System.out.println("Failed to delete file " + file.getName() + " due to " + e.getMessage());
+            }
+        }
+    }
+
+    // hash string to MD5 bigint
+    private BigInteger hash(String fullAddress) {
+        try {
             MessageDigest md = MessageDigest.getInstance("MD5");
             md.update(fullAddress.getBytes());
             byte[] digest = md.digest();
-            BigInteger hashInt = new BigInteger(1, digest);
-
-            // Create new ECSNode
-            String nodeName = "Server:" + fullAddress;
-            ECSNode node = new ECSNode(nodeName, serverHost, serverPort);
-
-            hashRing.put(hashInt, node);
-            return hashInt;
+            return new BigInteger(1, digest);
         } catch (NoSuchAlgorithmException e) {
             logger.error(e);
             throw new RuntimeException(e);
         }
+    }
+    private BigInteger addNewServerNodeToHashRing(String serverHost, int serverPort) {
+        String fullAddress =  serverHost + ":" + serverPort;
+        BigInteger hashInt = hash(fullAddress);
+
+        // Create new ECSNode
+        String nodeName = "Server:" + fullAddress;
+        ECSNode node = new ECSNode(nodeName, serverHost, serverPort);
+
+        hashRing.put(hashInt, node);
+        return hashInt;
+    }
+
+    private void removeServerNodeFromHashRing(String serverHost, int serverPort) {
+        String fullAddress =  serverHost + ":" + serverPort;
+        BigInteger key = hash(fullAddress);
+
+        if (!this.hashRing.containsKey(key)) {
+            System.out.println("Error: Key '" + key + "' not found in hashmap");
+        } else {
+            this.hashRing.remove(key);
+        }
+    };
+
+    /**
+     * @param fullAddress IP:port of removed server
+     */
+    public void updateMetadataAfterNodeRemoval (String fullAddress) {
+        if (metadata.containsKey(fullAddress)) {
+            BigInteger nodeToRemoveRangeStart = metadata.get(fullAddress).get(0);
+            BigInteger nodeToRemoveRangeEnd = metadata.get(fullAddress).get(1);
+
+            List<Map.Entry<String, List<BigInteger>>> sortedEntries = getSortedMetadata();
+            BigInteger prevStart = BigInteger.ZERO;
+            for (Map.Entry<String, List<BigInteger>> entry : sortedEntries) {
+                String key = entry.getKey();
+                BigInteger rangeStart = entry.getValue().get(0);
+                int comparisonResult = rangeStart.compareTo(nodeToRemoveRangeStart);
+                if (comparisonResult > 0) {
+                    metadata.remove(fullAddress);
+
+                    // extend the range of the successor node to cover removed node range
+                    List<BigInteger> successorRange = entry.getValue();
+                    successorRange.set(1, nodeToRemoveRangeEnd);
+                    metadata.put(key, successorRange);
+    //                moveFiles(successor, serverToRemove, Arrays.asList(nodeToRemoveRangeStart, nodeToRemoveRangeEnd))
+                    break;
+                }
+            }
+        }
+    }
+
+    // return sorted nodes in metadata map by the start of their key-range
+    private List<Map.Entry<String, List<BigInteger>>> getSortedMetadata() {
+        List<Map.Entry<String, List<BigInteger>>> sortedEntries = new ArrayList<>(metadata.entrySet());
+        Collections.sort(sortedEntries, new Comparator<Map.Entry<String, List<BigInteger>>>() {
+            @Override
+            public int compare(Map.Entry<String, List<BigInteger>> e1, Map.Entry<String, List<BigInteger>> e2) {
+                BigInteger first1 = e1.getValue().get(0);
+                BigInteger first2 = e2.getValue().get(0);
+                return first1.compareTo(first2);
+            }
+        });
+
+        return sortedEntries;
     }
 
     public void run() {
@@ -387,7 +516,5 @@ public class ECSClient implements IECSClient {
             System.out.println("Error! Unable to initialize logger!");
             e.printStackTrace();
             System.exit(1);        }
-
-
     }
 }
