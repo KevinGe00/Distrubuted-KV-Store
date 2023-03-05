@@ -1,0 +1,11 @@
+.idea/
+CLIENT_MANIFEST.MF
+ECE419_Project.iml
+ECS_MANIFEST.MF
+SERVER_MANIFEST.MF
+bin/
+logs/
+m2-server.jar
+m2-ecs.jar
+m2-client.jar
+out/
