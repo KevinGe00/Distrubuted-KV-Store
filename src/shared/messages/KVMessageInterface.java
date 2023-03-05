@@ -20,7 +20,13 @@ public interface KVMessageInterface {
 		
 		GET_KEYRANGE,		/* client -> server: request for latest Keyrange metadata */
 
-		NOT_SET			/* Custom: placeholder for new KVMessage */
+		NOT_SET,			/* Custom: placeholder for new KVMessage */
+
+		ECS_SERVER_RUN,     /* ECS tells server to RUN */
+		ECS_SERVER_STOP,   /* ECS tells server to STOP */
+		ECS_SERVER_STOP_SUCCESS,    /* Server tells ECS that it has died */
+		ECS_SERVER_WRITE_LOCK,      /* ECS tells server to enter WRITE_LOCK */
+		ECS_SERVER_TRANSFER_COMPLETE,   /* Server tells ECS that it has finished file transfer */
 	}
 
 	// set and get methods for Status

@@ -37,6 +37,13 @@ public class ECSClient implements IECSClient {
         this.port = port;
     }
 
+    public boolean getRunning(){
+        return running;
+    }
+    /* Port */
+    public int getPort(){
+        return port;
+    }
     private void initializeServer() {
         logger.info("Initialize ECS server socket ...");
         // find IP for host
@@ -352,7 +359,6 @@ public class ECSClient implements IECSClient {
 
             String logLevelString = cmd.getOptionValue("ll", "ALL");
             new LogSetup("logs/ecs.log", Level.toLevel(logLevelString));
-            logger.info("ECS started.");
 
             ecsClient.initializeServer();
             // testing, remove later

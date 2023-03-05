@@ -1,21 +1,20 @@
 package app_kvECS;
 
-import java.io.InputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.lang.Integer;
 
+import app_kvServer.IKVServer;
 import app_kvServer.KVServer;
 import org.apache.log4j.*;
 
-import app_kvServer.KVServer.Status;
 import shared.messages.KVMessage;
-import shared.messages.KVMessageObj;
-import shared.messages.KVMessage.StatusType;
+import shared.messages.KVMessageInterface.StatusType;
+import shared.messages.KVMessageInterface;
+import app_kvServer.IKVServer.SerStatus;
+
 /**
  * Represents a connection end point for a particular server that is
  * connected to the ECS. This class is responsible for message reception
@@ -26,160 +25,161 @@ import shared.messages.KVMessage.StatusType;
 public class ServerECSConnection implements Runnable {
     private static Logger logger = Logger.getRootLogger();
 
-    private boolean isOpen;
+    private Socket responseSocket;
+    private String responseIP;
+    private int responsePort;
     private static final int BUFFER_SIZE = 1024;
     private static final int DROP_SIZE = 1 + 1 + 20 + 3 + 120000;
 
     private Socket serverSocket;
     private ECSClient handleECS;
-    private InputStream input;
-    private OutputStream output;
+    private int ECSPort;
+    // note: DataInput/OutputStream does not need to be closed.
+    private DataInputStream input;
+    private DataOutputStream output;
 
     /**
      * Constructs a new ServerECSConnection object for a given TCP socket.
      * @param clientSocket the Socket object for the client connection.
      */
-    public ServerECSConnection(Socket serverSocket, ECSClient handleECS) {
-        this.serverSocket = serverSocket;
+    public ServerECSConnection(Socket responseSocket, ECSClient handleECS) {
+        this.responseSocket = responseSocket;
+        responseIP = responseSocket.getInetAddress().getHostAddress();
+        responsePort = responseSocket.getPort();
         this.handleECS = handleECS;
-        this.isOpen = true;
+        ECSPort = handleECS.getPort();
     }
 
     /**
      * Initializes and starts the server/ECS connection.
      */
     public void run() {
-        logger.info("Server to ECS connection established.");
-        while (isOpen) {
-            try {
-                output = serverSocket.getOutputStream();
-                input = serverSocket.getInputStream();
-
-                KVMessageObj serverMsg = receiveMessage();
-
-                switch (serverMsg.getStatus()) {
-                    case GET:
-                        try {
-                        } catch (Exception e) {
-                        }
-                        break;
-                    default:
-                        break;
-                }
-            } catch (Exception ioe) {
-                logger.error("Error! Connection could not be established!", ioe);
-            } finally {
-            }
+        try {
+            input = new DataInputStream(new BufferedInputStream(responseSocket.getInputStream()));
+            output = new DataOutputStream(new BufferedOutputStream(responseSocket.getOutputStream()));
+        } catch (Exception e) {
+            logger.error("Failed to create data stream for child socket of server #"
+                    + ECSPort + " connected to IP: '"+ responseIP + "' \t port: "
+                    + responsePort, e);
+            close();
+            return;
         }
+
+        while (handleECS.getRunning()) {
+            // === receive message ===
+            KVMessage kvMsgRecv = null;
+            try {
+                // block until receiving response, exception when socket closed
+                kvMsgRecv = receiveKVMessage();
+            } catch (Exception e) {
+                logger.error("Exception when receiving message at child socket of server #"
+                        + ECSPort+ " connected to IP: '"+ responseIP + "' \t port: "
+                        + responsePort
+                        + " Not an error if caused by manual interrupt.", e);
+                close();
+                return;
+            }
+            // =======================
+
+            // === process received message, and reply ===
+            KVMessageInterface.StatusType statusRecv = kvMsgRecv.getStatus();
+            String keyRecv = kvMsgRecv.getKey();
+            String valueRecv = kvMsgRecv.getValue();
+
+            // 2. normal KV response to server
+            switch (statusRecv) {
+                case ECS_SERVER_STOP_SUCCESS: {
+                    // Remove server from metadata
+                }
+                case ECS_SERVER_TRANSFER_COMPLETE: {
+                    // Send back message ECS_SERVER_RUN
+                }
+                default: {
+                    logger.error("Invalid message <" + statusRecv.name()
+                            + "> received at child socket of server #"
+                            + ECSPort + " connected to IP: '"+ responseIP
+                            + "' \t port: " + responsePort);
+                    close();
+                    return;
+                }
+            }
+            // ===========================================
+        }
+        close();
+        return;
     }
+
     /**
      * Method sends a TextMessage using this socket.
      * @param msg the message that is to be sent.
      * @throws IOException some I/O error regarding the output stream
      */
-
-    public void sendMessage(KVMessageObj msg) throws IOException {
-        byte[] msgBytes = new byte[0];
-        byte[] b1, b2;
-
-        switch (msg.getStatus()) {
-            case GET_SUCCESS:
-                break;
-            default:
-                break;
+    private void close() {
+        if (responseSocket == null) {
+            return;
         }
-
-        output.write(msgBytes, 0, msgBytes.length);
-        output.flush();
-        logger.info("SEND \t<"
-                + serverSocket.getInetAddress().getHostAddress() + ":"
-                + serverSocket.getPort() + ">: '"
-                + msg.getStatus() +"'");
+        if (responseSocket.isClosed()) {
+            responseSocket = null;
+            return;
+        }
+        try {
+            logger.debug("Child of ECS #" + ECSPort + " closing response socket"
+                    + " connected to IP: '" + responseIP + "' \t port: "
+                    + responsePort + ". \nExiting very soon.");
+            responseSocket.close();
+            responseSocket = null;
+        } catch (Exception e) {
+            logger.error("Unexpected Exception! Unable to close child socket of "
+                    + "ECS #" + ECSPort + " connected to IP: '" + responseIP
+                    + "' \t port: " + responsePort + "\nExiting very soon.", e);
+            // unsolvable error, thread must be shut down now
+            responseSocket = null;
+        }
     }
 
-    private KVMessageObj receiveMessage() throws IOException {
-        KVMessageObj kvMsg = new KVMessageObj();
-
-        int index = 0;
-        byte[] msgBytes = null, tmp = null;
-        byte[] bufferBytes = new byte[BUFFER_SIZE];
-
-        /* read first 1 char - StatusType from stream */
-        int statusIdx = input.read();
-        StatusType statusMsg = StatusType.values()[statusIdx];
-        kvMsg.setStatus(statusMsg);
-
-        /* read second 1 char - byte length of Key from stream*/
-        int lenBytesKey = input.read();
-
-        byte read = (byte) input.read();
-        boolean reading = true;
-        while(/*read != 13  && */ read != 10 && read !=-1 && reading) {/* CR, LF, error */
-            /* if buffer filled, copy to msg array */
-            if(index == BUFFER_SIZE) {
-                if(msgBytes == null){
-                    tmp = new byte[BUFFER_SIZE];
-                    System.arraycopy(bufferBytes, 0, tmp, 0, BUFFER_SIZE);
-                } else {
-                    tmp = new byte[msgBytes.length + BUFFER_SIZE];
-                    System.arraycopy(msgBytes, 0, tmp, 0, msgBytes.length);
-                    System.arraycopy(bufferBytes, 0, tmp, msgBytes.length,
-                            BUFFER_SIZE);
-                }
-
-                msgBytes = tmp;
-                bufferBytes = new byte[BUFFER_SIZE];
-                index = 0;
-            }
-
-            /* only read valid characters, i.e. letters and constants */
-            bufferBytes[index] = read;
-            index++;
-
-            /* stop reading is DROP_SIZE is reached */
-            if(msgBytes != null && msgBytes.length + index >= DROP_SIZE) {
-                reading = false;
-            }
-
-            /* read next char from stream */
-            read = (byte) input.read();
+    /**
+     * Universal method to SEND a KVMessage via socket; will log the message.
+     * Does NOT throw an exception.
+     * @param kvMsg a KVMessage object
+     * @return true for success, false otherwise
+     */
+    private boolean sendKVMessage(KVMessage kvMsg) {
+        try {
+            kvMsg.logMessageContent();
+            byte[] bytes_msg = kvMsg.toBytes();
+            // LV structure: length, value
+            output.writeInt(bytes_msg.length);
+            output.write(bytes_msg);
+            logger.debug("#" + ECSPort + "-" + responsePort + ": "
+                    + "Sending 4(length int) " +  bytes_msg.length + " bytes.");
+            output.flush();
+        } catch (Exception e) {
+            logger.error("Exception when ECS #" + ECSPort + " sends to IP: '"
+                    + responseIP + "' \t port: " + responsePort
+                    + "\n Should close socket to unblock server's receive().", e);
+            return false;
         }
+        return true;
+    }
 
-        if(msgBytes == null){
-            tmp = new byte[index];
-            System.arraycopy(bufferBytes, 0, tmp, 0, index);
-        } else {
-            tmp = new byte[msgBytes.length + index];
-            System.arraycopy(msgBytes, 0, tmp, 0, msgBytes.length);
-            System.arraycopy(bufferBytes, 0, tmp, msgBytes.length, index);
+    /**
+     * Universal method to RECEIVE a KVMessage via socket; will log the message.
+     * @return a KVMessage object
+     * @throws Exception throws exception as closing socket causes receive() to unblock.
+     */
+    private KVMessage receiveKVMessage() throws Exception {
+        KVMessage kvMsg = new KVMessage();
+        // LV structure: length, value
+        int size_bytes = input.readInt();
+        logger.debug("#" + ECSPort + "-" + responsePort + ": "
+                + "Receiving 4(length int) + " + size_bytes + " bytes.");
+        byte[] bytes = new byte[size_bytes];
+        input.readFully(bytes);
+        if (!kvMsg.fromBytes(bytes)) {
+            throw new Exception("#" + ECSPort + "-" + responsePort + ": "
+                    + "Cannot convert all received bytes to KVMessage.");
         }
-
-        msgBytes = tmp;
-
-        /* get key */
-        kvMsg.setKey(new String(Arrays.copyOfRange(msgBytes, 0, lenBytesKey)));
-
-        if (statusMsg == StatusType.PUT) {
-            byte b3 = msgBytes[lenBytesKey];
-            byte b2 = msgBytes[lenBytesKey+1];
-            byte b1 = msgBytes[lenBytesKey+2];
-            int lenBytesValue = ((b3 & 0xff) << 16) | ((b2 & 0xff) << 8) | (b1 & 0xff);
-            kvMsg.setValue(new String(Arrays.copyOfRange(msgBytes,
-                    lenBytesKey+3,
-                    lenBytesKey+3+lenBytesValue)));
-            logger.info("RECEIVE \t<"
-                    + serverSocket.getInetAddress().getHostAddress() + ":"
-                    + serverSocket.getPort() + ">: '"
-                    + kvMsg.getStatus() + "' "
-                    + kvMsg.getKey() + " "
-                    + kvMsg.getValue());
-        } else {
-            logger.info("RECEIVE \t<"
-                    + serverSocket.getInetAddress().getHostAddress() + ":"
-                    + serverSocket.getPort() + ">: '"
-                    + kvMsg.getStatus() + "' "
-                    + kvMsg.getKey());
-        }
+        kvMsg.logMessageContent();
         return kvMsg;
     }
 }
