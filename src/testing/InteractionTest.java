@@ -5,8 +5,7 @@ import org.junit.Test;
 import client.KVStore;
 import junit.framework.TestCase;
 import shared.messages.KVMessage;
-import shared.messages.KVMessageObj;
-import shared.messages.KVMessage.StatusType;
+import shared.messages.KVMessageInterface.StatusType;
 
 
 public class InteractionTest extends TestCase {
@@ -30,7 +29,7 @@ public class InteractionTest extends TestCase {
 	public void testPut() {
 		String key = "foo2";
 		String value = "bar2";
-		KVMessageObj response = null;
+		KVMessage response = null;
 		Exception ex = null;
 
 		try {
@@ -64,7 +63,7 @@ public class InteractionTest extends TestCase {
 		String initialValue = "initial";
 		String updatedValue = "updated";
 		
-		KVMessageObj response = null;
+		KVMessage response = null;
 		Exception ex = null;
 
 		try {
@@ -84,7 +83,7 @@ public class InteractionTest extends TestCase {
 		String key = "deleteTestValue";
 		String value = "toDelete";
 		
-		KVMessageObj response = null;
+		KVMessage response = null;
 		Exception ex = null;
 
 		try {
@@ -102,7 +101,7 @@ public class InteractionTest extends TestCase {
 	public void testGet() {
 		String key = "foo";
 		String value = "bar";
-		KVMessageObj response = null;
+		KVMessage response = null;
 		Exception ex = null;
 
 			try {
@@ -118,7 +117,7 @@ public class InteractionTest extends TestCase {
 	@Test
 	public void testGetUnsetValue() {
 		String key = "an unset value";
-		KVMessageObj response = null;
+		KVMessage response = null;
 		Exception ex = null;
 
 		try {

@@ -1,8 +1,8 @@
 package app_kvServer;
 
 import logger.LogSetup;
-
 import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,91 +15,113 @@ import java.util.ArrayList;
 import java.util.Iterator;
 
 import org.apache.commons.cli.*;
-import org.apache.log4j.Logger;
+
+import shared.messages.KVMessage;
+import shared.messages.KVMessageInterface.StatusType;
 
 
 public class KVServer extends Thread implements IKVServer {
-	public enum Status {
-		RUN, 	/* running status */
-		CLOSE, 	/* closing status, main way of closing */
-		KILL 	/* killing status, should not use this */
+	/**
+	 * Datatype containing a pair of response socket and thread.
+	 */
+	class ChildObject {
+		public Thread childThread;
+		public Socket childSocket;
 	}
 
 	private static Logger logger = Logger.getRootLogger();
+
+	private SerStatus status;
 	private int port;
-	private int cacheSize; 				// not implemented
-	private CacheStrategy strategy; 	// not implemented
-	private String address;
-	private String bootstrapServer;
-	private String storeDirectory;
-	private String logfilePath;
-	private String logLevel;
+	private String hostname;
 	private Store store;
+	private String bootstrapServer;
+	// log file path and log level are not stored
+	private ArrayList<ChildObject> childObjects;
 	private Socket ECSSocket;
 	private ServerSocket serverSocket;
-	private Status status;
 	private OutputStream output;
 	private InputStream input;
-	private ArrayList<Thread> clients = new ArrayList<Thread>();
+	// latest server metadata
+    private String metadata;
 
 	/**
-	 * Start KV Server at given port
-	 *
-	 * @param port           given port for storage server to operate
-	 * @param cacheSize      specifies how many key-value pairs the server is allowed
-	 *                       to keep in-memory
-	 * @param strategy       specifies the cache replacement strategy in case the cache
-	 *                       is full and there is a GET- or PUT-request on a key that is
-	 *                       currently not contained in the cache. Options are "FIFO", "LRU",
-	 *                       and "LFU".
+	 * Initialize a new, stopped KVServer at port
+	 * @param port 		port of server
 	 */
-	public KVServer(int port, int cacheSize, String strategy) {
+	public KVServer(int port) {
+		status = SerStatus.STOPPED;
 		this.port = port;
-		// optional caching has not been implemented
-		if (cacheSize > 0) {
-			logger.warn("Non-zero cache size specified but not implemented.");
-		}
-		this.cacheSize = cacheSize;
-		switch (strategy.toLowerCase()) {
-			case "fifo":
-				logger.warn("FIFO strategy specified but not implemented.");
-				this.strategy = CacheStrategy.LRU;
-				break;
-			case "lru":
-				logger.warn("LRU strategy specified but not implemented.");
-				this.strategy = CacheStrategy.LRU;
-				break;
-			case "lfu":
-				logger.warn("LFU strategy specified but not implemented.");
-				this.strategy = CacheStrategy.LFU;
-				break;
-			default:
-				this.strategy = CacheStrategy.None;
-				break;
-		}
+		hostname = null;
+		store = null;
+		childObjects = null;
+		serverSocket = null;
+		metadata = null;
 	}
-	
-	public Status getStatus() {
+	public KVServer(int port, int cacheSize, String strategy) {
+		status = SerStatus.STOPPED;
+		this.port = port;
+		hostname = null;
+		store = null;
+		childObjects = null;
+		serverSocket = null;
+		metadata = null;
+	}
+
+	/* Server metadata */
+	/**
+	 * Set server's metadata,
+	 * @param metatdata metadata from ECS server
+	 * @return true for success, false otherwise
+	 */
+	public synchronized boolean setMetadata(String metatdata) {
+		this.metadata = metatdata;
+		return true;
+	}
+	/**
+	 * Get server's latest metadata.
+	 * @return
+	 */
+	public String getMetadata() {
+		return metadata;
+	}
+
+	/* Server status enum */
+	@Override
+	public synchronized boolean setSerStatus(SerStatus status) {
+		if ((this.status == SerStatus.SHUTTING_DOWN)
+			&& (status != SerStatus.SHUTTING_DOWN)){
+			logger.warn("Cancel setSerStatus as server #" + getPort()
+						+ " is shutting down.");
+			return false;
+		} else if (this.status != status) {
+			this.status = status;
+			logger.info("Set server #" + getPort() + " status to "
+						+ this.status.name());
+		}
+		return true;
+	}
+	@Override
+	public SerStatus getSerStatus() {
 		return status;
 	}
 
-	public void setStatus(Status status) {
-		this.status = status;
-	}
-
-	public void setLogfilePath(String logfilePath){
-		this.logfilePath = logfilePath;
-		return;
-	}
-
+	/* Port */
 	@Override
 	public int getPort(){
 		return port;
 	}
 
-	public void setAddress(String address) {
-		this.address = address;
-		return;
+	/* Hostname */
+	public boolean setHostname(String hostname) {
+		if (this.hostname != null) {
+			logger.error("Attempted to re-set existing server #" + getPort()
+						+ " hostname.");
+			return false;
+		}
+		this.hostname = hostname;
+		logger.info("Server hostname: " + this.hostname + ", port: " + this.port);
+		return true;
 	}
 
 	public void setBootstrapServer(String bootstrapServer) {
@@ -109,120 +131,166 @@ public class KVServer extends Thread implements IKVServer {
 
 	@Override
     public String getHostname(){
-		return address;
+		return hostname;
 	}
 
+	/* Store */
+	public boolean initializeStore(String dirStore) {
+		if (store != null) {
+			logger.error("Attempted to re-init existing server #" + getPort()
+						+ " disk storage.");
+			return false;
+		}
+		try {
+			store = new Store(dirStore);
+		} catch (Exception e) {
+			logger.error("Exception when initializing server #" + getPort()
+						+ " disk storage.", e);
+			return false;
+		}
+		logger.info("Server #"+ port + " disk storage initialization successful.");
+		return true;
+	}
 	@Override
-    public CacheStrategy getCacheStrategy(){
-		return strategy;
+    public boolean inStorage(String key) {
+		if (store == null) {
+			logger.error("Attempted to check key, when disk for server #" + getPort()
+						+ " has NOT been initialized.");
+			return false;
+		}
+		try {
+			return store.containsKey(key);
+		} catch (Exception e) {
+			logger.error("Exception when checking if <" + key + "> in disk of server #"
+						+ getPort() + ".", e);
+			return false;
+		}
 	}
-
 	@Override
-    public int getCacheSize(){
-		return cacheSize;
+    public boolean clearStorage() {
+		if (store == null) {
+			logger.error("Attempted to clear storage, when disk for server #" + getPort()
+						+ " has NOT been initialized.");
+			return false;
+		}
+		try {
+			store.clearStorage();
+		} catch (Exception e) {
+			logger.error("Exception when clearing disk storage for server #" + getPort()
+						+ ".");
+			return false;
+		}
+		logger.info("Server #"+ port +" disk storage cleared.");
+		return true;
 	}
 
-	@Override
-    public boolean inStorage(String key){
-		return store.containsKey(key);
-	}
-
-	@Override
-    public boolean inCache(String key){
-		// optional caching has not been implemented
-		return false;
-	}
-
+	/* Test method: get & put */
 	@Override
     public String getKV(String key) throws Exception{
 		try {
-			String val = this.store.get(key);
+			// GET
+			String val = store.get(key);
 			if (val == null) {
-				String keyNotFoundErr = "Error! Couldn't find key: " + key + " in store.";
+				String keyNotFoundErr = "Error! Couldn't find key: " + key + " in store"
+										+ " for server #" + getPort() + ".";
 				System.err.println(keyNotFoundErr);
 				logger.error(keyNotFoundErr);
 				throw new Exception(keyNotFoundErr);
 			}
 			return val;
 		} catch (Exception e) {
-			String errMsg = "Error when fetching key: " + key ;
+			String errMsg = "Error when fetching key: " + key + " from server #"
+							+ getPort() + ".";
 			System.err.println(errMsg);
 			logger.error(errMsg, e);
 			throw new Exception(errMsg);
 		}
 	}
-
 	@Override
     public void putKV(String key, String value) throws Exception{
+		String cmd_specific = "";
 		try {
-			this.store.put(key, value);
+			if (value == null) {
+				// DELETE
+				cmd_specific = "(DELETE)";
+				store.delete(key);
+			} else if (store.containsKey(key)) {
+				// UPDATE
+				cmd_specific = "(UPDATE)";
+				store.update(key, value);
+			} else {
+				// PUT
+				cmd_specific = "(PUT)";
+				store.put(key, value);
+			}
 		} catch (Exception e) {
-			String errMsg = "Error when trying to add key-value pair!" ;
+			String errMsg = "Error when trying to add key-value pair on server #"
+							+ getPort() + ". " + cmd_specific;
 			System.err.println(errMsg);
 			logger.error(errMsg, e);
 			throw new Exception(errMsg);
 		}
 	}
 
+	/* Server control */
 	@Override
-    public void clearCache(){
-		// optional caching has not been implemented
-		return;
-	}
-
-	@Override
-    public void clearStorage(){
-		this.store.clearStorage();
-	}
-
-	@Override
+	// runs in the main thread for server
     public void run(){
 		// main thread of the server
 		connectECS();
-		initializeServer();
-		
-		if (serverSocket != null) {
-			while (getStatus() == Status.RUN) {
-				try {
-					Socket clientSocket = serverSocket.accept();
-					logger.info("Connected to " 
-						+ clientSocket.getInetAddress().getHostName() 
-						+  " on port " + clientSocket.getPort());
-					
-					housekeepClientThreads();
-					KVClientConnection connection = 
-						new KVClientConnection(clientSocket, this);
-					Thread client = new Thread(connection);
-					clients.add(client);
-					client.start();
-				} catch (IOException e) {
-					switch (status) {
-						case RUN:
-							logger.warn("Warning! " +
-								"Unable to establish connection. " +
-								"Continue listening...\n" + e);
-							break;
-						case CLOSE:
-							logger.warn("Warning! " +
-								"Instructed to close the server. " +
-								"Closing...");
-							close();
-							break;
-						case KILL:
-							logger.warn("Warning! " +
-								"Instructed to kill the server. " +
-								"Killing...");
-							kill();
-							break;
-					}
-				} catch (Exception e) {
-					logger.error("Unexpected Error! " +
-						"Killing..." + e);
-					kill();
+		if (!initializeServer()) {
+			logger.error("Server #" + getPort() + " initialization failed. "
+						+ "Terminated.");
+			return;
+		}
+
+		setSerStatus(SerStatus.RUNNING); 	// comment this line out when ECS is in control
+
+		loop: while (true) {
+			// catch all unexpected exceptions, only exit with break
+			try {
+				if (getSerStatus() == SerStatus.SHUTTING_DOWN) {
+					// the last loop: shutting down server
+					close();
+					break loop;
 				}
+				// blocked until receiving a connection from client or ECS
+				Socket responseSocket = serverSocket.accept();
+				logger.info("Server #" + getPort() + " accepts a connection from"
+							+ " socket at IP: "
+							+ responseSocket.getInetAddress().getHostAddress()
+							+ " and port: " + responseSocket.getPort());
+				// run the communication module on a new child thread
+				KVServerChild childRunnable = new KVServerChild(responseSocket, this);
+				Thread childThread = new Thread(childRunnable);
+				ChildObject childObject = new ChildObject();
+				// record response socket and child thread in a pair
+				childObject.childSocket = responseSocket;
+				childObject.childThread = childThread;
+				childObjects.add(childObject);
+				// start the child thread
+				childThread.start();
+				// clean up child threads that have exited during the block.
+				if (!cleanExitedChildThreads()) {
+					continue;
+				}
+			} catch (IOException ioe) {
+				// server listening socket is closed by others while in accept()
+				logger.error("Server #" + getPort() + "'s listening socket was closed"
+							+ " during accept(). "
+							+ "Not an error if caused by manual interrupt", ioe);
+				close();
+				break loop;
+			} catch (Exception e) {
+				// report unexpected exception (method does not throw excep)
+				logger.error("Server #" + getPort() + "encountered an unexpected "
+							+ "exception in main thread run().", e);
+				close();
+				break loop;
 			}
 		}
-		logger.info("Server stopped.");
+		logger.info("Server #" + getPort() + " has shut down.");
+		return;
 	}
 
 	public void connectECS() {
@@ -241,105 +309,190 @@ public class KVServer extends Thread implements IKVServer {
 		}
 	}
 
-	private void initializeServer() {
-    	logger.info("Initialize server ...");
-		// find IP for host
+	/**
+	 * Initialize server, check if all settings are given.
+	 * @return true for success, false otherwise
+	 */
+	private boolean initializeServer() {
+    	logger.info("Initialize server...");
+		// Crtl+C shutdown hook
+		Runtime.getRuntime().addShutdownHook(new Thread()
+		{
+			public void run()
+			{
+				close();
+				logger.debug("Shutdown hook thread exited.");
+				return;
+			}
+		});
+		// ensure status is STOPPED
+		if (getSerStatus() != SerStatus.STOPPED) {
+			logger.error("Cannot initialize with a run server.");
+			return false;
+		}
+		// no need to check port, server initialized with port as name
+		// check if hostname has been set
+		if (getHostname() == null) {
+			logger.error("Hostname not set. Call 'setHostname' once.");
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			return false;
+		}
+		// check if store (aka disk storage) has been initialized.
+		if (store == null) {
+			logger.error("Server store (disk storage) not initialized. "
+						+ "Call 'initializeStore' once.");
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			return false;
+		}
+		// initialize client object(thread + socket) arraylist
+		childObjects = new ArrayList<ChildObject>();
+
+		// find IP for hostname
 		InetAddress bindAddr;
 		try {
-			bindAddr = InetAddress.getByName(address);
+			bindAddr = InetAddress.getByName(getHostname());
 		} catch (UnknownHostException e) {
-			logger.error("Error! IP address for host '" + address 
-						 + "' cannot be found.");
-			setStatus(Status.CLOSE);
-			return;
+			logger.error("Exception! IP address for hostname '" + getHostname()
+						 + "' cannot be found.", e);
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			return false;
 		}
 		// create socket with IP and port
     	try {
-            serverSocket = new ServerSocket(port, 0, bindAddr);
+            serverSocket = new ServerSocket(getPort(), 0, bindAddr);
 			serverSocket.setReuseAddress(true);
-            logger.info("Server host: " + serverSocket.getInetAddress().getHostName()
-					+ " \tport: " + serverSocket.getLocalPort());    
+            logger.info("Server hostname: "
+						+ serverSocket.getInetAddress().getHostName()
+						+ " \tport: " + serverSocket.getLocalPort());
         } catch (IOException e) {
-        	logger.error("Error! Cannot open server socket on host: '"
-						+ address + "' \tport: " + port);
+        	logger.error("Exception! Cannot open server socket at hostname: '"
+						+ getHostname() + "' \tport: " + getPort());
 			closeServerSocket();
-			setStatus(Status.CLOSE);
-            return;
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+            return false;
         }
-		setStatus(Status.RUN);
-		return;
+		return true;
     }
 
-	/* 
-	 * housekeep threads, remove finished threads.
-	 * require exceptions to be caught outside this function.
-	 */
-	private void housekeepClientThreads() {
-		Iterator<Thread> iterClients = clients.iterator();
-		while (iterClients.hasNext()) {
-			Thread client = iterClients.next();
-			if (!client.isAlive()) {
-				iterClients.remove();
-			}
-		}
-	}
-
-	@Override
-    public void close(){
-		// Gracefully stop the server, can perform any additional actions
-		setStatus(Status.CLOSE);;
-		closeServerSocket();
-		joinClientThreads();
-	}
-
-	@Override
-    public void kill(){
-		// Abruptly stop the server without any additional actions
-		// i.e., do NOT perform saving to storage
-		setStatus(Status.KILL);
-        closeServerSocket();
-		joinClientThreads();
-	}
-
-	/*
-	 * close the listening socket of the server.
-	 * should not be directly called in run().
+	/**
+	 * Close the listening socket of the server.
+	 * Should not be directly called in run(), as child sockets are not affected.
+	 * Note: this function does not set SerStatus to SHUTTING_DOWN
 	 */
 	private void closeServerSocket() {
-		if (serverSocket != null) {
-			try {
-				serverSocket.close();
-				serverSocket = null;
-			} catch (Exception e) {
-				logger.error("Unexpected Error! " +
-						"Unable to close socket on host: '" + address
-						+ "' \tport: " + port, e);
-			}
+		if (serverSocket == null) {
+			return;
+		}
+		if (serverSocket.isClosed()) {
+			serverSocket = null;
+			return;
+		}
+		try {
+			logger.debug("Closing server #" + getPort()+ " socket...");
+			serverSocket.close();
+			serverSocket = null;
+		} catch (Exception e) {
+			logger.error("Unexpected Exception! Unable to close server socket"
+						+ " at host: '" + getHostname()
+						+ "' \tport: " + getPort(), e);
+			// unsolvable error, the server must be shut down now.
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			serverSocket = null;
 		}
 	}
 
-	/*
-	 * wait for all client threads to complete.
-	 * should not be directly called in run().
+	@Override
+    public synchronized void kill(){
+		// immediately returns; should not call this, use close() instead.
+		logger.debug("Server #" + getPort() + " is being KILLED.");
+		setSerStatus(SerStatus.SHUTTING_DOWN);
+        closeServerSocket();
+		joinChildThreads(true);
+	}
+
+	@Override
+    public synchronized void close(){
+		logger.debug("Server #" + getPort() + " is shutting down.");
+		// for internal shutdown, SerStatus should be SHUTTING_DOWN before this.
+		setSerStatus(SerStatus.SHUTTING_DOWN);
+		closeServerSocket();
+		joinChildThreads(false);
+	}
+
+	/**
+	 * Wait for all child threads to exit.
+	 * Should not be directly called in run(), as other steps are required,
+	 * including setting SHUTTING_DOWN status and closing listening socket.
+	 * @param isKilling true for kill(), false for close()
 	 */
-	private void joinClientThreads() {
+	private void joinChildThreads(boolean isKilling) {
+		if (childObjects == null) {
+			return;
+		}
 		try{
-			Iterator<Thread> iterClients = clients.iterator();
-			while (iterClients.hasNext()) {
-				Thread client = iterClients.next();
-				client.join();
-				iterClients.remove();
+			logger.debug("Waiting for server #" + getPort()
+						+ "'s' child client threads to exit...");
+			Iterator<ChildObject> iterObjects = childObjects.iterator();
+			while (iterObjects.hasNext()) {
+				ChildObject childObject = iterObjects.next();
+				Thread childThread = childObject.childThread;
+				Socket childSocket = childObject.childSocket;
+				if (isKilling) {
+					// for kill(),
+					// absurdly interrupt child threads by closing their socket
+					childSocket.close();
+					childThread.join(100);
+				} else {
+					// for close(),
+					// wait till they finish their response, then close
+					childThread.join(900);
+					childSocket.close();
+					childThread.join(100);
+				}
+				iterObjects.remove();
+				logger.debug("Server #" + getPort() + "'s child exited.");
+			}
+			logger.debug("All child client threads of server #" + getPort()
+						+ " has exited.");
+			childObjects = null;
+		} catch (Exception e) {
+			logger.error("Unexpected Exception! Server #" + getPort()
+						+ " failed to wait for all child client threads"
+						+ " to finish.", e);
+			// unsolvable error, the server must be shut down now.
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			childObjects = null;
+		}
+	}
+
+	/**
+	 * Regularly call this method to remove exited threads from
+	 * server's child client thread ArrayList.
+	 * @return true for success, false otherwise.
+	 */
+	private boolean cleanExitedChildThreads() {
+		if (childObjects == null) {
+			return true;
+		}
+		try {
+
+			Iterator<ChildObject> iterObjects = childObjects.iterator();
+			while (iterObjects.hasNext()) {
+				ChildObject childObject = iterObjects.next();
+				Thread childThread = childObject.childThread;
+				if (!childThread.isAlive()) {
+					iterObjects.remove();
+				}
 			}
 		} catch (Exception e) {
-			logger.error("Unexpected Error! Exception when "
-					+ "waiting for all client threads to finish. "
-					+ e);
+			logger.error("Unexpected Exception! Server #" + getPort()
+						+ " failed to clean up exited child client threads", e);
+			// unsolvable error, the server must be shut down now.
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			childObjects = null;
+			return false;
 		}
-	}
-
-	public void initializeStore(String storeDirectory) {
-		this.storeDirectory = storeDirectory;
-		this.store = new Store(this.storeDirectory);
+		return true;
 	}
 
 	private static Options buildOptions() {
@@ -399,19 +552,21 @@ public class KVServer extends Thread implements IKVServer {
 				return;
 			}
 
-			int portVal = Integer.parseInt(cmd.getOptionValue("p"));
-			String storeDirectory = cmd.getOptionValue("d");
-
-			KVServer server = new KVServer(portVal, 10, "FIFO");
-			server.initializeStore(storeDirectory);
-
-			server.setAddress(cmd.getOptionValue("a", "localhost"));
+			// arg 0: port
+			KVServer server = new KVServer(Integer.parseInt(cmd.getOptionValue("p")));
+			// arg 1: hostname
+			server.setHostname(cmd.getOptionValue("a", "localhost"));
+			// arg 2: directory of disk storage
+			server.initializeStore(cmd.getOptionValue("d"));
+			// arg 3: relative path of log file
+			String pathLog = cmd.getOptionValue("l", "logs/server.log");
+			// arg 4: Bootstrap ECS server
 			server.setBootstrapServer(cmd.getOptionValue("b"));
-			server.setLogfilePath(cmd.getOptionValue("l", "."));
-
+			// arg 5: log level
 			String logLevelString = cmd.getOptionValue("ll", "ALL");
-			new LogSetup("logs/server.log", Level.toLevel(logLevelString));
+			new LogSetup(pathLog, Level.toLevel(logLevelString));
 
+			// call server.run() in its own thread
 			server.start();
 		} catch (IOException e) {
 			System.out.println("Error! Unable to initialize logger!");

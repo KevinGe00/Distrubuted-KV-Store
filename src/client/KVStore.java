@@ -1,19 +1,22 @@
 package client;
 
 import org.apache.log4j.Logger;
-import shared.messages.KVMessage;
-import shared.messages.KVMessageObj;
-import shared.messages.KVMessage.StatusType;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.HashSet;
-import java.nio.ByteBuffer;
 import java.util.Set;
 import java.util.Arrays;
+
+import shared.messages.KVMessage;
+import shared.messages.KVMessageInterface.StatusType;;
 
 public class KVStore extends Thread implements KVCommInterface {
 	private Logger logger = Logger.getRootLogger();
@@ -23,15 +26,15 @@ public class KVStore extends Thread implements KVCommInterface {
 	private String address;
 	private int port;
 	private Socket clientSocket;
-	private OutputStream output;
-	private InputStream input;
+	// note: DataInput/OutputStream does not need to be closed.
+	private DataOutputStream output;
+	private DataInputStream input;
 	/**
 	 * Initialize KVStore with address and port of KVServer
 	 * @param address the address of the KVServer
 	 * @param port the port of the KVServer
 	 */
 	public KVStore(String address, int port) {
-		// TODO Auto-generated method stub
 		this.address = address;
 		this.port = port;
 	}
@@ -40,9 +43,10 @@ public class KVStore extends Thread implements KVCommInterface {
 	public void connect() throws Exception {
 		try {
 			clientSocket = new Socket(address, port);
+			clientSocket.setReuseAddress(true);
 			setRunning(true);
-			output = clientSocket.getOutputStream();
-			input = clientSocket.getInputStream();
+			output = new DataOutputStream(new BufferedOutputStream(clientSocket.getOutputStream()));
+			input = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
 
 			logger.info("Connection established to: " + address + ":" + port);
 		} catch (UnknownHostException e) {
@@ -59,6 +63,8 @@ public class KVStore extends Thread implements KVCommInterface {
 				input.close();
 				output.close();
 				clientSocket.close();
+				clientSocket = null;
+				logger.info("Client terminated the connection.");
 			}
 		} catch (IOException ioe) {
 			logger.error("Error! Unable to tear down connection!", ioe);
@@ -70,147 +76,99 @@ public class KVStore extends Thread implements KVCommInterface {
 	}
 
 	@Override
-	public KVMessageObj put(String key, String value) throws Exception {
-		byte[] msgBytes, b1, b2, b3, b4, b5;
-		/* PUT */
-		b1 = new byte[] {(byte) StatusType.PUT.ordinal()};
-		b3 = key.getBytes();
-		b2 = new byte[] {(byte) b3.length};
-		b5 = (value + '\n').getBytes();
-		b4 = new byte[] {(byte) ((b5.length >> 16) & 0xff),
-						 (byte) ((b5.length >> 8) & 0xff),
-						 (byte) (b5.length & 0xff)};
-		msgBytes = ByteBuffer.allocate(b1.length +
-										b2.length +
-										b3.length +
-										b4.length +
-										b5.length).put(b1)
-							   			 .put(b2)
-										 .put(b3)
-										 .put(b4)
-										 .put(b5)
-										 .array();
-		output.write(msgBytes, 0, msgBytes.length);
-		output.flush();
-		logger.info("SEND PUT \t"
-					+ key + " " 
-					+ value);
-		/* Receive PUT Success / Error */
-		return receiveMessage();
+	public KVMessage put(String key, String value) throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		if (!kvMsg.setStatus(StatusType.PUT)) {
+			throw new Exception("PUT: cannot set KVMessage's status to PUT.");
+		}
+		if (!kvMsg.setKey(key)) {
+			throw new Exception("PUT: cannot set KVMessage's key to <"
+								+ key 
+								+ ">.");
+		}
+		if (!kvMsg.setValue(value)) {
+			throw new Exception("PUT: cannot set KVMessage's value to <"
+								+ value
+								+ ">.");
+		}
+		sendKVMessage(kvMsg);
+		return receiveKVMessage();
 	}
 
 	@Override
-	public KVMessageObj get(String key) throws Exception {
-		byte[] msgBytes, b1, b2, b3;
-		/* GET */
-		b1 = new byte[] {(byte) StatusType.GET.ordinal()};
-		b3 = (key + '\n').getBytes();
-		b2 = new byte[] {(byte) b3.length};
-		msgBytes = ByteBuffer.allocate(b1.length +
-										b2.length +
-										b3.length).put(b1)
-							   			 .put(b2)
-										 .put(b3)
-										 .array();
-		output.write(msgBytes, 0, msgBytes.length);
-		output.flush();
-		logger.info("SEND GET \t"
-					+ key);
-		/* Receive GET Success / Error */
-		return receiveMessage();
+	public KVMessage get(String key) throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		if (!kvMsg.setStatus(StatusType.GET)) {
+			throw new Exception("GET: cannot set KVMessage's status to GET.");
+		}
+		if (!kvMsg.setKey(key)) {
+			throw new Exception("GET: cannot set KVMessage's key to <"
+								+ key
+								+ ">.");
+		}
+		if (!kvMsg.setValue(null)) {
+			throw new Exception("GET: cannot set KVMessage's value to <null>.");
+		}
+		sendKVMessage(kvMsg);
+		return receiveKVMessage();
+	}
+
+	/**
+	 * Send command 'keyrange' to a running server for latest keyrange metadata
+	 * @return KVMessage containing the metadata, or message 'server stopped'
+	 * @throws Exception throws exception if parsing or sending bytes failed.
+	 */
+	public KVMessage getKeyrange() throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		if (!kvMsg.setStatus(StatusType.GET_KEYRANGE)) {
+			throw new Exception("GET_KEYRANGE: cannot set KVMessage's status to"
+								+ " GET_KEYRANGE.");
+		}
+		if (!kvMsg.setKey(null)) {
+			throw new Exception("GET: cannot set KVMessage's key to <null>.");
+		}
+		if (!kvMsg.setValue(null)) {
+			throw new Exception("GET: cannot set KVMessage's value to <null>.");
+		}
+		sendKVMessage(kvMsg);
+		return receiveKVMessage();
 	}
 
 	public void setRunning(boolean run) {
 		this.running = run;
 	}
 
-	public KVMessageObj receiveMessage() throws IOException {
-		KVMessageObj kvMsg = new KVMessageObj();
-		int BUFFER_SIZE = 1024;
-		int DROP_SIZE = 1 + 1 + 20 + 3 + 120000;
+	/**
+	 * Universal method to SEND a KVMessage via socket; will log the message.
+	 * @param kvMsg a KVMessage object
+	 * @throws Exception throws exception if parsing or sending bytes failed.
+	 */
+	private void sendKVMessage(KVMessage kvMsg) throws Exception {
+		kvMsg.logMessageContent();
+		byte[] bytes_msg = kvMsg.toBytes();
+		// LV structure: length, value
+		output.writeInt(bytes_msg.length);
+		output.write(bytes_msg);
+		logger.debug("Sending 4(length int) + " +  bytes_msg.length + " bytes to server.");
+		output.flush();
+	}
 
-		int index = 0;
-		byte[] msgBytes = null, tmp = null;
-		byte[] bufferBytes = new byte[BUFFER_SIZE];
-		
-		/* read first 1 char - StatusType from stream */
-		int statusIdx = input.read();
-		StatusType statusMsg = StatusType.values()[statusIdx];
-		kvMsg.setStatus(statusMsg);
-		if (statusMsg == StatusType.GET_ERROR) {
-			/* GET_ERROR */
-			logger.info("RECEIVE GET_ERROR: \t" 
-					+ kvMsg.getStatus());
-			return kvMsg;
+	/**
+	 * Universal method to RECEIVE a KVMessage via socket; will log the message.
+	 * @return a KVMessage object
+	 * @throws Exception throws exception as closing socket causes receive() to unblock.
+	 */
+	private KVMessage receiveKVMessage() throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		// LV structure: length, value
+		int size_bytes = input.readInt();
+		logger.debug("Receiving 4(length int) + " + size_bytes + " bytes from server.");
+		byte[] bytes = new byte[size_bytes];
+		input.readFully(bytes);
+		if (!kvMsg.fromBytes(bytes)) {
+			throw new Exception("Cannot convert all received bytes to KVMessage.");
 		}
-
-		byte read = (byte) input.read();
-		boolean reading = true;
-		while(/*read != 13  && */ read != 10 && read !=-1 && reading) {/* CR, LF, error */
-			/* if buffer filled, copy to msg array */
-			if(index == BUFFER_SIZE) {
-				if(msgBytes == null){
-					tmp = new byte[BUFFER_SIZE];
-					System.arraycopy(bufferBytes, 0, tmp, 0, BUFFER_SIZE);
-				} else {
-					tmp = new byte[msgBytes.length + BUFFER_SIZE];
-					System.arraycopy(msgBytes, 0, tmp, 0, msgBytes.length);
-					System.arraycopy(bufferBytes, 0, tmp, msgBytes.length,
-							BUFFER_SIZE);
-				}
-
-				msgBytes = tmp;
-				bufferBytes = new byte[BUFFER_SIZE];
-				index = 0;
-			} 
-			
-			/* only read valid characters, i.e. letters and constants */
-			bufferBytes[index] = read;
-			index++;
-			
-			/* stop reading is DROP_SIZE is reached */
-			if(msgBytes != null && msgBytes.length + index >= DROP_SIZE) {
-				reading = false;
-			}
-			
-			/* read next char from stream */
-			read = (byte) input.read();
-		}
-		
-		if(msgBytes == null){
-			tmp = new byte[index];
-			System.arraycopy(bufferBytes, 0, tmp, 0, index);
-		} else {
-			tmp = new byte[msgBytes.length + index];
-			System.arraycopy(msgBytes, 0, tmp, 0, msgBytes.length);
-			System.arraycopy(bufferBytes, 0, tmp, msgBytes.length, index);
-		}
-		
-		msgBytes = tmp;
-		
-		/* get key */
-		switch (statusMsg) {
-			case GET_SUCCESS:
-				kvMsg.setValue(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
-				logger.info("RECEIVE GET_SUCCESS: \t"
-							+ kvMsg.getStatus() + " "
-							+ kvMsg.getValue());
-				break;
-			case PUT_SUCCESS:
-				kvMsg.setKey(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
-				logger.info("RECEIVE PUT_SUCCESS: \t"
-							+ kvMsg.getStatus() + " "
-							+ kvMsg.getKey());
-				break;
-			case PUT_ERROR:
-				kvMsg.setKey(new String(Arrays.copyOfRange(msgBytes, 0, msgBytes.length)));
-				logger.info("RECEIVE PUT_ERROR: \t"
-							+ kvMsg.getStatus() + " "
-							+ kvMsg.getKey());
-				break;
-			default:
-				break;
-		}
+		kvMsg.logMessageContent();
 		return kvMsg;
 	}
 }
