@@ -12,6 +12,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.UnknownHostException;
 
+import shared.messages.KVMessage;
+import shared.messages.KVMessageInterface.StatusType;;
+
 public class KVClient implements ClientSocketListener, IKVClient  {
 
     private static Logger logger = Logger.getRootLogger();
@@ -52,6 +55,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         } else if (tokens[0].equals("connect")){
             if(tokens.length == 3) {
                 try{
+                    disconnect();
                     serverAddress = tokens[1];
                     serverPort = Integer.parseInt(tokens[2]);
                     newConnection(serverAddress, serverPort);
@@ -71,27 +75,81 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         } else if(tokens[0].equals("disconnect")) {
             disconnect();
         } else if(tokens[0].equals("get")) {
-            // System.out.println(PROMPT + "Not implemented yet!");
+            /* GET request */
             if(tokens.length == 2) {
                 try{
                     String key = tokens[1];
-                    client.get(key);
+                    KVMessage msg = client.get(key);
+                    switch (msg.getStatus()) {
+                        case GET_SUCCESS:
+                            System.out.println(PROMPT + "Got value: "
+                                               + msg.getValue());
+                            break;
+                        case GET_ERROR:
+                            printError("Server cannot get value for key: <"
+                                       + msg.getKey()
+                                       + ">");
+                            break;
+                        default:
+                            printError("Unexpected server response: <"
+                                       + msg.getStatus().name()
+                                       + ">");
+                            logger.error("The KVMessage from server is not for GET.");
+                    }
                 } catch (Exception e) {
+                    printError("GET command failure.");
+                    logger.error("Client's GET operation failed.", e);
                 }
             } else {
                 printError("Invalid number of parameters!");
             }
         } else if(tokens[0].equals("put")) {
-            //System.out.println(PROMPT + "Not implemented yet!");
-            if(tokens.length == 3) {
-                try{
-                    String key = tokens[1];
-                    String value = tokens[2];
-                    client.put(key, value);
-                } catch (Exception e) {
-                }
-            } else {
+            /* PUT request */
+            if ((tokens.length < 2) || (tokens.length > 3)) {
                 printError("Invalid number of parameters!");
+            }
+            String key = tokens[1];
+            String value = "";
+            if (tokens.length == 2) {
+                /* DELETE */
+                value = null;
+            } else {
+                /* PUT or UPDATE */
+                value = tokens[2];
+            }
+            try {
+                KVMessage msg = client.put(key, value);
+                switch (msg.getStatus()) {
+                    case PUT_SUCCESS:
+                        System.out.println(PROMPT + "PUT succeeded.");
+                        break;
+                    case PUT_UPDATE:
+                        System.out.println(PROMPT + "UPDATE succeeded.");
+                        break;
+                    case PUT_ERROR:
+                        printError("Server cannot put key-value pair: <"
+                                   + msg.getKey() + ">-<"
+                                   + msg.getValue()
+                                   + ">");      
+                        break;
+                    case DELETE_SUCCESS:
+                        System.out.println(PROMPT + "DELETE succeeded.");
+                        break;
+                    case DELETE_ERROR:
+                        printError("Server cannot delete key-value pair "
+                                   + "for key: <"
+                                   + msg.getKey()
+                                   + ">");
+                        break;
+                    default:
+                        printError("Unexpected server response: <"
+                                   + msg.getStatus().name()
+                                   + ">");
+                        logger.error("The KVMessage from server is not for PUT.");
+                }
+            } catch (Exception e) {
+                printError("PUT command failure.");
+                logger.error("Client's PUT operation failed.", e);
             }
         } else if(tokens[0].equals("logLevel")) {
             if(tokens.length == 2) {
@@ -124,7 +182,8 @@ public class KVClient implements ClientSocketListener, IKVClient  {
 
     private void disconnect() {
         if(client != null) {
-            // TODO: implement
+            client.disconnect();
+            client = null;
         }
     }
 
