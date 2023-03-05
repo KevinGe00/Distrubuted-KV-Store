@@ -5,6 +5,8 @@ import logger.LogSetup;
 import org.apache.log4j.Level;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.ServerSocket;
@@ -28,12 +30,16 @@ public class KVServer extends Thread implements IKVServer {
 	private int cacheSize; 				// not implemented
 	private CacheStrategy strategy; 	// not implemented
 	private String address;
+	private String bootstrapServer;
 	private String storeDirectory;
 	private String logfilePath;
 	private String logLevel;
 	private Store store;
+	private Socket ECSSocket;
 	private ServerSocket serverSocket;
 	private Status status;
+	private OutputStream output;
+	private InputStream input;
 	private ArrayList<Thread> clients = new ArrayList<Thread>();
 
 	/**
@@ -93,6 +99,11 @@ public class KVServer extends Thread implements IKVServer {
 
 	public void setAddress(String address) {
 		this.address = address;
+		return;
+	}
+
+	public void setBootstrapServer(String bootstrapServer) {
+		this.bootstrapServer = bootstrapServer;
 		return;
 	}
 
@@ -167,6 +178,7 @@ public class KVServer extends Thread implements IKVServer {
 	@Override
     public void run(){
 		// main thread of the server
+		connectECS();
 		initializeServer();
 		
 		if (serverSocket != null) {
@@ -211,6 +223,22 @@ public class KVServer extends Thread implements IKVServer {
 			}
 		}
 		logger.info("Server stopped.");
+	}
+
+	public void connectECS() {
+		try {
+			ECSSocket = new Socket(String.valueOf(this.bootstrapServer.split(":")[0]), Integer.parseInt(this.bootstrapServer.split(":")[1]));
+			output = ECSSocket.getOutputStream();
+			input = ECSSocket.getInputStream();
+
+			logger.info("ECS Connection established to: " + bootstrapServer);
+		} catch (UnknownHostException e) {
+			logger.error("Error! IP address for host '" + String.valueOf(this.bootstrapServer.split(":")[0])
+					+ "' cannot be found.");
+		} catch (IOException e) {
+			logger.error("Error! Cannot open server socket on host: '"
+					+ bootstrapServer);
+		}
 	}
 
 	private void initializeServer() {
@@ -328,6 +356,11 @@ public class KVServer extends Thread implements IKVServer {
 		address.setType(String.class);
 		options.addOption(address);
 
+		Option bootstrapServer = new Option("b", "bootstrapServer", true, "Sets the bootstrap server which is the ECS");
+		address.setRequired(true);
+		address.setType(String.class);
+		options.addOption(bootstrapServer);
+
 		Option directory = new Option("d", "directory", true, "Directory for files (Put here the files you need to persist the data, the directory is created upfront and you can rely on that it exists)");
 		directory.setRequired(true);
 		directory.setType(String.class);
@@ -373,6 +406,7 @@ public class KVServer extends Thread implements IKVServer {
 			server.initializeStore(storeDirectory);
 
 			server.setAddress(cmd.getOptionValue("a", "localhost"));
+			server.setBootstrapServer(cmd.getOptionValue("b"));
 			server.setLogfilePath(cmd.getOptionValue("l", "."));
 
 			String logLevelString = cmd.getOptionValue("ll", "ALL");

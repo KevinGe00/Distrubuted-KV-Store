@@ -1,5 +1,7 @@
 package app_kvECS;
 
+import app_kvServer.KVClientConnection;
+import app_kvServer.KVServer;
 import ecs.ECSNode;
 import ecs.IECSNode;
 import logger.LogSetup;
@@ -11,6 +13,9 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.Socket;
 import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,12 +25,13 @@ public class ECSClient implements IECSClient {
     private static Logger logger = Logger.getRootLogger();
     private String address;
     private int port;
-    private boolean stop = false;
-    private boolean running = false;
+    private boolean running = true;
     private ServerSocket serverSocket;
+    private BufferedReader stdin;
     private HashMap<BigInteger, IECSNode> hashRing = new HashMap<>();
     //mapping of KVServers (defined by their IP:Port) and the associated range of hash value
     private HashMap<String, List<BigInteger>> metadata = new HashMap<>();
+    private ArrayList<Thread> clients = new ArrayList<Thread>();
     public ECSClient(String address, int port) {
         this.address = address;
         this.port = port;
@@ -55,6 +61,8 @@ public class ECSClient implements IECSClient {
             return;
         }
     }
+
+
 
     /*
      * close the listening socket of the server.
@@ -215,6 +223,85 @@ public class ECSClient implements IECSClient {
         }
     }
 
+    public void run() {
+        Thread thread1 = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (running) {
+                    stdin = new BufferedReader(new InputStreamReader(System.in));
+                    System.out.print("ECSClient> ");
+
+                    try {
+                        String cmdLine = stdin.readLine();
+                        ECSClient.this.handleCommand(cmdLine);
+                    } catch (IOException e) {
+                        running = false;
+                        logger.error("ECSClient not responding, terminate application.");
+                    }
+                }
+            }
+        });
+
+        Thread thread2 = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                if (serverSocket != null) {
+                    while (true) {
+                        try {
+                            Socket clientSocket = serverSocket.accept();
+                            logger.info("Connected to "
+                                    + clientSocket.getInetAddress().getHostName()
+                                    + " on port " + clientSocket.getPort());
+
+                            housekeepClientThreads();
+                            ServerECSConnection connection =
+                                    new ServerECSConnection(clientSocket, ECSClient.this);
+                            Thread client = new Thread(connection);
+                            clients.add(client);
+                            client.start();
+
+
+                        } catch (IOException e) {
+                            if (running) {
+                                logger.warn("Warning! " +
+                                        "Unable to establish connection. " +
+                                        "Continue listening...\n" + e);
+                                break;
+                            } else {
+                                logger.warn("Warning! " +
+                                        "ECS no longer running, Shutting down.\n" + e);
+                                closeServerSocket();
+                            }
+
+                        } catch (Exception e) {
+                            logger.error("Unexpected Error! " +
+                                    "Killing..." + e);
+                            closeServerSocket();
+                        }
+                    }
+                }
+            }
+        });
+
+        thread1.start();
+        thread2.start();
+
+    }
+
+    private void housekeepClientThreads() {
+        Iterator<Thread> iterClients = clients.iterator();
+        while (iterClients.hasNext()) {
+            Thread client = iterClients.next();
+            if (!client.isAlive()) {
+                iterClients.remove();
+            }
+        }
+    }
+
+    public void handleCommand(String cmdLine) {
+        String[] tokens = cmdLine.split("\\s+");
+    }
+
     /**
      * Command line options
      */
@@ -258,13 +345,16 @@ public class ECSClient implements IECSClient {
 
             // Initialize ecs client with command line params
             String address = cmd.getOptionValue("a", "localhost");
+            System.out.println(address);
             int port = Integer.parseInt(cmd.getOptionValue("p"));
+
             ECSClient ecsClient = new ECSClient(address, port);
-            ecsClient.initializeServer();
 
             String logLevelString = cmd.getOptionValue("ll", "ALL");
             new LogSetup("logs/ecs.log", Level.toLevel(logLevelString));
+            logger.info("ECS started.");
 
+            ecsClient.initializeServer();
             // testing, remove later
             BigInteger one = ecsClient.addNewServerNodeToHashRing("localhost", 5000);
             ecsClient.updateMetadataWithNewNode("localhost" + ":" + 5000, one);
@@ -282,6 +372,7 @@ public class ECSClient implements IECSClient {
                 List<BigInteger> value = entry.getValue();
                 System.out.println(key + ": " + value);
             }
+            ecsClient.run();
         } catch (NumberFormatException nfe) {
             System.out.println("Error! Invalid argument <port>! Not a number!");
             System.out.println("Usage: Server <port>!");
@@ -290,5 +381,7 @@ public class ECSClient implements IECSClient {
             System.out.println("Error! Unable to initialize logger!");
             e.printStackTrace();
             System.exit(1);        }
+
+
     }
 }
