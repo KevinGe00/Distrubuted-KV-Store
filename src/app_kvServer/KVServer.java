@@ -375,6 +375,7 @@ public class KVServer extends Thread implements IKVServer {
         	logger.error("Exception! Cannot open server socket at hostname: '"
 						+ getHostname() + "' \tport: " + getPort());
 			closeServerSocket();
+			closeECSSocket();
 			setSerStatus(SerStatus.SHUTTING_DOWN);
             return false;
         }
@@ -408,12 +409,35 @@ public class KVServer extends Thread implements IKVServer {
 		}
 	}
 
+	private void closeECSSocket() {
+		if (ECSSocket == null) {
+			return;
+		}
+		if (ECSSocket.isClosed()) {
+			ECSSocket = null;
+			return;
+		}
+		try {
+			logger.debug("Closing server #" + getPort()+ " socket...");
+			ECSSocket.close();
+			ECSSocket = null;
+		} catch (Exception e) {
+			logger.error("Unexpected Exception! Unable to close server socket"
+					+ " at host: '" + getHostname()
+					+ "' \tport: " + getPort(), e);
+			// unsolvable error, the server must be shut down now.
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			ECSSocket = null;
+		}
+	}
+
 	@Override
     public synchronized void kill(){
 		// immediately returns; should not call this, use close() instead.
 		logger.debug("Server #" + getPort() + " is being KILLED.");
 		setSerStatus(SerStatus.SHUTTING_DOWN);
         closeServerSocket();
+		closeECSSocket();
 		joinChildThreads(true);
 	}
 
@@ -423,6 +447,7 @@ public class KVServer extends Thread implements IKVServer {
 		// for internal shutdown, SerStatus should be SHUTTING_DOWN before this.
 		setSerStatus(SerStatus.SHUTTING_DOWN);
 		closeServerSocket();
+		closeECSSocket();
 		joinChildThreads(false);
 	}
 
