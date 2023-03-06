@@ -75,7 +75,7 @@ public class ECSClient implements IECSClient {
     public int getPort(){
         return port;
     }
-    private void initializeServer() {
+    public void initializeServer() {
         logger.info("Initialize ECS server socket ...");
         // find IP for host
         InetAddress bindAddr;

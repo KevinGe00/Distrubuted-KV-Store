@@ -244,7 +244,12 @@ public class KVServer extends Thread implements IKVServer {
 	// runs in the main thread for server
     public void run(){
 		// main thread of the server
-		connectECS();
+		if (!connectECS()) {
+			logger.error("Server #" + getPort() + " failed to connect to ECS. "
+					+ "Terminated.");
+			return;
+		}
+
 		if (!initializeServer()) {
 			logger.error("Server #" + getPort() + " initialization failed. "
 						+ "Terminated.");
@@ -300,19 +305,22 @@ public class KVServer extends Thread implements IKVServer {
 		return;
 	}
 
-	public void connectECS() {
+	public boolean connectECS(){
 		try {
 			ECSSocket = new Socket(String.valueOf(this.bootstrapServer.split(":")[0]), Integer.parseInt(this.bootstrapServer.split(":")[1]));
 			output = ECSSocket.getOutputStream();
 			input = ECSSocket.getInputStream();
 
 			logger.info("ECS Connection established to: " + bootstrapServer);
+			return true;
 		} catch (UnknownHostException e) {
 			logger.error("Error! IP address for host '" + String.valueOf(this.bootstrapServer.split(":")[0])
 					+ "' cannot be found.");
+			return false;
 		} catch (IOException e) {
 			logger.error("Error! Cannot open server socket on host: '"
 					+ bootstrapServer);
+			return false;
 		}
 	}
 
@@ -589,7 +597,7 @@ public class KVServer extends Thread implements IKVServer {
 			// arg 1: hostname
 			server.setHostname(cmd.getOptionValue("a", "localhost"));
 			// arg 2: directory of disk storage
-			server.initializeStore(cmd.getOptionValue("d"));
+			server.initializeStore("out/" + cmd.getOptionValue("p"));
 			// arg 3: relative path of log file
 			String pathLog = cmd.getOptionValue("l", "logs/server.log");
 			// arg 4: Bootstrap ECS server
