@@ -18,10 +18,7 @@ import java.util.Map;
 
 import shared.messages.KVMessageInterface.StatusType;
 
-/**
- * A runnable class responsible to communicate with servers,
- * also process server's requests.
- */
+
 public class ECSClientChild implements Runnable {
 
     private static Logger logger = Logger.getRootLogger();
@@ -160,7 +157,7 @@ public class ECSClientChild implements Runnable {
                     String val = valueRecv + ","
                             + ptrECSClient.getMetadata().get(newNodeFullAddr).get(0)
                             + "," + ptrECSClient.getMetadata().get(newNodeFullAddr).get(1)
-                            + "," + responsePort;
+                            + ",localhost," + responsePort;
                     successorMsgSend.setValue(val);
 
                     successorNodeRunnable.sendKVMessage(successorMsgSend);  // to be change
@@ -212,7 +209,7 @@ public class ECSClientChild implements Runnable {
                     String val = successorStoreDir + ","
                                 + removedNode.range.get(0).toString(16) + ","
                                 + removedNode.range.get(1).toString(16) + ","
-                                + "localhost" + "," + removedNode.port;
+                                + "localhost," + removedNode.port;
                     kvMsgSend.setValue(val);
 
                     if (!sendKVMessage(kvMsgSend)) {

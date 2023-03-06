@@ -563,12 +563,15 @@ public class KVServer extends Thread implements IKVServer {
 		}
 		try {
 			ECSObject = new ChildObject();
-			ECSObject.childSocket = new Socket(getECSHostname(), getECSPort());
-			ECSObject.childSocket.setReuseAddress(true);
+			setECSSocket(new Socket(getECSHostname(), getECSPort()));
+			getECSocket().setReuseAddress(true);
 			logger.info("Server #" + getPort() + " ECS connection established to: "
 						+ bootstrapServer);
-			// to-do
-
+			// run the ECS communication module on a new child thread
+			KVServerECS ecsRunnable = new KVServerECS(getECSocket(), this);
+			setECSThread(new Thread(ecsRunnable));
+			// start the child thread
+			getECSThread().start();
 		} catch (UnknownHostException e) {
 			logger.error("Server #" + getPort() + " ECS IP address for host '" 
 						+ getECSHostname() + "' cannot be found.");
@@ -788,7 +791,7 @@ public class KVServer extends Thread implements IKVServer {
 	 * this server is responsible to send a notice to ECS when the file transfer finishes.
 	 * In addition, it is responsible to send the server that receives the file a notice to release Write Lock.
 	 */
-    private void moveFilesTo(String dirNewStore, List<BigInteger> range) {
+    public void moveFilesTo(String dirNewStore, List<BigInteger> range) {
 		SerStatus serStatus = getSerStatus();
 		if (serStatus == SerStatus.RUNNING) {
 			setSerStatus(SerStatus.WRITE_LOCK);
