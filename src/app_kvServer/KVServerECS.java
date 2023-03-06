@@ -170,8 +170,6 @@ public class KVServerECS implements Runnable {
 				}
 			}
 		}
-		close();
-		return;
 	}
 
 	private void shutdownProcess() {
@@ -189,7 +187,7 @@ public class KVServerECS implements Runnable {
 			// 2. receive Write Lock with KeyRange
 			kvMsgRecv = receiveKVMessage(input);
 			if (kvMsgRecv.getStatus() == StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE) {
-				break;
+				;
 			} else {
 				// second try
 				kvMsgSend = emptyResponse();
@@ -200,7 +198,7 @@ public class KVServerECS implements Runnable {
 				}
 				kvMsgRecv = receiveKVMessage(input);
 				if (kvMsgRecv.getStatus() == StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE) {
-					break;
+					;
 				} else {
 					logger.error("ECS did not respond to server #" + serverPort + "'s "
 								+ "Shutdown request. Exiting.");

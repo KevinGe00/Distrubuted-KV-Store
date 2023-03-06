@@ -117,7 +117,11 @@ public class KVServerChild implements Runnable {
 					// temporarily stop this server as it will re-initialize store
 					ptrKVServer.setSerStatus(SerStatus.STOPPED);
 				}
-				Thread.sleep(1000);
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {
+					throw new RuntimeException(e);
+				}
 				if (!ptrKVServer.reInitializeStore()) {
 					/* Fatal error, the shared Store cannot be re-initialized. */
 					ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);

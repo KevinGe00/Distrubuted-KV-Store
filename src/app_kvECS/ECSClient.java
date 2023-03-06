@@ -234,11 +234,16 @@ public class ECSClient implements IECSClient {
         if (metadata.isEmpty()) {
             // add dummy node to handle wrap-around
             List<BigInteger> range1 = Arrays.asList(BigInteger.ZERO, position);
-            metadata.put("dummy", range1);
+            metadata.put("dummy:1000", range1);
 
             // insert new node into metadata mapping
             List<BigInteger> range2 = Arrays.asList(position, BigInteger.ZERO);
             metadata.put(fullAddress, range2);
+
+            successors.put(fullAddress, "dummy:1000");
+            successors.put("dummy:1000", fullAddress);
+
+
         } else {
             List<Map.Entry<String, List<BigInteger>>> sortedEntries = getSortedMetadata();
 
@@ -279,7 +284,7 @@ public class ECSClient implements IECSClient {
                 Map.Entry<String, List<BigInteger>> dummy = sortedEntries.get(0);
                 List<BigInteger> successorRange = dummy.getValue();
                 successorRange.set(1, position);
-                metadata.put("dummy", successorRange);
+                metadata.put("dummy:1000", successorRange);
             };
         }
     }

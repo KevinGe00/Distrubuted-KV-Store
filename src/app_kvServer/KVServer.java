@@ -237,7 +237,7 @@ public class KVServer extends Thread implements IKVServer {
 		if (bootstrapServer == null) {
 			logger.warn("Getting ECS port from null bootstrap "
 						+ "in server #" + getPort());
-			return null;
+			return 0;
 		}
 		return Integer.parseInt(bootstrapServer.split(":")[1]);
 	}

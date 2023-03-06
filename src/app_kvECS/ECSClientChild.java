@@ -147,8 +147,11 @@ public class ECSClientChild implements Runnable {
 
                     // deal with successor node
                     String newNodeFullAddr = responseHost + ":" + responsePort;
+                    System.out.println(newNodeFullAddr);
+
                     String successor = ptrECSClient.successors.get(newNodeFullAddr);
-                    ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(successor).ecsClientChild;  // to be change
+                    System.out.println(successor);
+
 
                     // Sets a write lock on the successor node and invoke transfer of data items
                     KVMessage successorMsgSend = new KVMessage();
@@ -160,7 +163,12 @@ public class ECSClientChild implements Runnable {
                             + ",localhost," + responsePort;
                     successorMsgSend.setValue(val);
 
-                    successorNodeRunnable.sendKVMessage(successorMsgSend);  // to be change
+                    if (successor.equals("dummy:1000")) {
+                        sendKVMessage(successorMsgSend);
+                    } else {
+                        ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(successor).ecsClientChild;  // to be change
+                        successorNodeRunnable.sendKVMessage(successorMsgSend);  // to be change
+                    }
                     // Wait for the successor to send back a notification to it's own ECS child that file transfer is complete
 
                 } else {
