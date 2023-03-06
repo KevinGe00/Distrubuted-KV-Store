@@ -4,6 +4,7 @@ import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -11,8 +12,15 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.ServerSocket;
 import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
+import java.math.BigInteger;
 
 import org.apache.commons.cli.*;
 
@@ -21,14 +29,12 @@ import shared.messages.KVMessageInterface.StatusType;
 
 
 public class KVServer extends Thread implements IKVServer {
-	private String dirStore;
-
 	/**
 	 * Datatype containing a pair of response socket and thread.
 	 */
 	class ChildObject {
-		public Thread childThread;
-		public Socket childSocket;
+		public Thread childThread = null;
+		public Socket childSocket = null;
 	}
 
 	private static Logger logger = Logger.getRootLogger();
@@ -36,16 +42,17 @@ public class KVServer extends Thread implements IKVServer {
 	private SerStatus status;
 	private int port;
 	private String hostname;
+	private String bootstrapServer; 	// ECS
+	private String dirStore;
 	private Store store;
-	private String bootstrapServer;
 	// log file path and log level are not stored
 	private ArrayList<ChildObject> childObjects;
-	private Socket ECSSocket;
+	private ChildObject ECSObject; 		// ECS
 	private ServerSocket serverSocket;
-	private OutputStream output;
-	private InputStream input;
 	// latest server metadata
     private String metadata;
+	private BigInteger lowerBoundResponsible;
+	private BigInteger upperBoundResponsible;
 
 	/**
 	 * Initialize a new, stopped KVServer at port
@@ -55,29 +62,57 @@ public class KVServer extends Thread implements IKVServer {
 		status = SerStatus.STOPPED;
 		this.port = port;
 		hostname = null;
+		bootstrapServer = null;
+		dirStore = null;
 		store = null;
 		childObjects = null;
+		ECSObject = null;
 		serverSocket = null;
 		metadata = null;
+		lowerBoundResponsible = null;
+		upperBoundResponsible = null;
 	}
 	public KVServer(int port, int cacheSize, String strategy) {
 		status = SerStatus.STOPPED;
 		this.port = port;
 		hostname = null;
+		bootstrapServer = null;
+		dirStore = null;
 		store = null;
 		childObjects = null;
+		ECSObject = null;
 		serverSocket = null;
 		metadata = null;
+		lowerBoundResponsible = null;
+		upperBoundResponsible = null;
 	}
 
 	/* Server metadata */
 	/**
-	 * Set server's metadata,
+	 * Set server's metadata, will update the hasmap metadata as well
 	 * @param metatdata metadata from ECS server
 	 * @return true for success, false otherwise
 	 */
 	public synchronized boolean setMetadata(String metatdata) {
+		if (metatdata == null) {
+			logger.error("Must not set metadata to null for server #"
+						+ getPort());
+			return false;
+		}
 		this.metadata = metatdata;
+		logger.debug("Server #" + getPort() + " has updated it keyrange"
+					+ " metadata.");
+		try {
+			updateBoundResponsible(metatdata);
+			logger.debug("Server #" + getPort() + "'s new lower bound: <"
+						+ lowerBoundResponsible.toString(16)
+						+ "> \tnew upper bound: <"
+						+ upperBoundResponsible.toString(16) + ">");
+		} catch (Exception e) {
+			logger.error("Unable to update keyrange bound for server #"
+						+ getPort() + ".", e);
+			return false;
+		}
 		return true;
 	}
 	/**
@@ -87,16 +122,68 @@ public class KVServer extends Thread implements IKVServer {
 	public String getMetadata() {
 		return metadata;
 	}
+	/**
+	 * Check if the server is responsible for this key
+	 * @param key a String key
+	 * @return true for responsible, false otherwise and need to send SERVER_NOT_RESPONSIBLE
+	 */
+	public boolean isResponsibleToKey(String key) {
+		BigInteger hashedKey = hash(key);
+		return isBounded(hashedKey, lowerBoundResponsible, upperBoundResponsible);
+	}
+	// hash string to MD5 bigint
+    private BigInteger hash(String s) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.update(s.getBytes());
+            byte[] digest = md.digest();
+            return new BigInteger(1, digest);
+        } catch (NoSuchAlgorithmException e) {
+            logger.error(e);
+            throw new RuntimeException(e);
+        }
+    }
+	// check BigInteger within bound or not
+	private boolean isBounded(BigInteger number, BigInteger lowerBound, BigInteger upperBound) {
+        return number.compareTo(lowerBound) >= 0 && number.compareTo(upperBound) <= 0;
+    }
+	/**
+     * Update lowerBoundResponsible and upperBoundResponsible with string metadata.
+     * @param meta a String keyrange metadata from ECS
+     */
+    public synchronized void updateBoundResponsible(String str) throws Exception {
+        if ((str == null) || (str == "")) {
+            return;
+        }
+		// check if this regular metadata update or write lock keyrange update
+		String[] semicolonSeperatedStrs = str.split(";");
+		String[] commaSeperatedStrs = str.split(",");
+		if (commaSeperatedStrs.length == 5) {
+			// write lock keyrange update
+			// -> Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port
+			lowerBoundResponsible = new BigInteger(commaSeperatedStrs[1], 16);
+			upperBoundResponsible = new BigInteger(commaSeperatedStrs[2], 16);
+		} else if (commaSeperatedStrs.length == 4) {
+			// regular metadata update
+			// -> range_from,range_to,ip,port;...;range_from,range_to,ip,port
+			for (String pair : semicolonSeperatedStrs) {
+				// range_from,range_to,ip,port
+				String[] rF_rT_ip_port = pair.split(",");
+				if (Integer.parseInt(rF_rT_ip_port[3]) == getPort()) {
+					// find the pair for this server
+					lowerBoundResponsible = new BigInteger(rF_rT_ip_port[0], 16);
+					upperBoundResponsible = new BigInteger(rF_rT_ip_port[1], 16);
+					return;
+				}
+			}
+		}
+		return;
+    }
 
 	/* Server status enum */
 	@Override
 	public synchronized boolean setSerStatus(SerStatus status) {
-		if ((this.status == SerStatus.SHUTTING_DOWN)
-			&& (status != SerStatus.SHUTTING_DOWN)){
-			logger.warn("Cancel setSerStatus as server #" + getPort()
-						+ " is shutting down.");
-			return false;
-		} else if (this.status != status) {
+		if (this.status != status) {
 			this.status = status;
 			logger.info("Set server #" + getPort() + " status to "
 						+ this.status.name());
@@ -106,10 +193,6 @@ public class KVServer extends Thread implements IKVServer {
 	@Override
 	public SerStatus getSerStatus() {
 		return status;
-	}
-
-	public String getDirStore() {
-		return dirStore;
 	}
 
 	/* Port */
@@ -129,33 +212,70 @@ public class KVServer extends Thread implements IKVServer {
 		logger.info("Server hostname: " + this.hostname + ", port: " + this.port);
 		return true;
 	}
-
-	public void setBootstrapServer(String bootstrapServer) {
-		this.bootstrapServer = bootstrapServer;
-		return;
-	}
-
 	@Override
     public String getHostname(){
 		return hostname;
 	}
 
+	/* Bootstrap ECS Server */
+	public boolean setBootstrapServer(String bootstrapServer) {
+		this.bootstrapServer = bootstrapServer;
+		return true;
+	}
+	public String getBootstrapServer() {
+		return bootstrapServer;
+	}
+	public String getECSHostname() {
+		if (bootstrapServer == null) {
+			logger.warn("Getting ECS hostname from null bootstrap "
+						+ "in server #" + getPort());
+			return null;
+		}
+		return String.valueOf(bootstrapServer.split(":")[0]);
+	}
+	public int getECSPort() {
+		if (bootstrapServer == null) {
+			logger.warn("Getting ECS port from null bootstrap "
+						+ "in server #" + getPort());
+			return null;
+		}
+		return Integer.parseInt(bootstrapServer.split(":")[1]);
+	}
+
 	/* Store */
+	public boolean setDirStore(String dirStore) {
+		this.dirStore = dirStore;
+		return true;
+	}
+	public String getDirStore() {
+		return dirStore;
+	}
 	public boolean initializeStore(String dirStore) {
 		if (store != null) {
-			logger.error("Attempted to re-init existing server #" + getPort()
+			logger.info("Attempted to re-init existing server #" + getPort()
 						+ " disk storage.");
 			return false;
 		}
 		try {
+			setDirStore(dirStore);
 			store = new Store(dirStore);
-			this.dirStore = dirStore;
 		} catch (Exception e) {
 			logger.error("Exception when initializing server #" + getPort()
 						+ " disk storage.", e);
 			return false;
 		}
 		logger.info("Server #"+ port + " disk storage initialization successful.");
+		return true;
+	}
+	public boolean reInitializeStore() {
+		try {
+			store = new Store(dirStore);
+		} catch (Exception e) {
+			logger.error("Exception when re-initializing server #" + getPort()
+						+ " disk storage.", e);
+			return false;
+		}
+		logger.info("Server #"+ port + " disk storage re-initialization successful.");
 		return true;
 	}
 	@Override
@@ -189,6 +309,64 @@ public class KVServer extends Thread implements IKVServer {
 		}
 		logger.info("Server #"+ port +" disk storage cleared.");
 		return true;
+	}
+
+	/* ECS Object: Socket + Thread */
+	/**
+	 * Single-use set ECS socket.
+	 * @param ECSSocket a new socket connected to ECS
+	 * @return true for success, false otherwise
+	 */
+	public boolean setECSSocket(Socket ECSSocket) {
+		if (ECSObject == null) {
+			logger.error("Attempted to set ECS socket, when ECS Object for server #" + getPort()
+						+ " has NOT been initialized.");
+			return false;
+		}
+		if (ECSObject.childSocket != null) {
+			logger.error("Attempted to set ECS socket, when ECS socket for server #" + getPort()
+						+ " already exists. 'setECSSocket' must be single-use.");
+			return false;
+		}
+		ECSObject.childSocket = ECSSocket;
+		return true;
+	}
+	public Socket getECSocket() {
+		if (ECSObject == null) {
+			return null;
+		}
+		if (ECSObject.childSocket == null) {
+			return null;
+		}
+		return ECSObject.childSocket;
+	}
+	/**
+	 * Single-use set ECS thread.
+	 * @param ECSSocket a new Thread where the communication module between server and ECS runs omn
+	 * @return true for success, false otherwise
+	 */
+	public boolean setECSThread(Thread ECSThread) {
+		if (ECSObject == null) {
+			logger.error("Attempted to set ECS Thread, when ECS Object for server #" + getPort()
+						+ " has NOT been initialized.");
+			return false;
+		}
+		if (ECSObject.childThread != null) {
+			logger.error("Attempted to set ECS thread, when ECS thread for server #" + getPort()
+						+ " already exists. 'setECSThread' must be single-use.");
+			return false;
+		}
+		ECSObject.childThread = ECSThread;
+		return true;
+	}
+	public Thread getECSThread() {
+		if (ECSObject == null) {
+			return null;
+		}
+		if (ECSObject.childThread == null) {
+			return null;
+		}
+		return ECSObject.childThread;
 	}
 
 	/* Test method: get & put */
@@ -244,19 +422,20 @@ public class KVServer extends Thread implements IKVServer {
 	// runs in the main thread for server
     public void run(){
 		// main thread of the server
-		if (!connectECS()) {
-			logger.error("Server #" + getPort() + " failed to connect to ECS. "
-					+ "Terminated.");
-			return;
-		}
-
 		if (!initializeServer()) {
 			logger.error("Server #" + getPort() + " initialization failed. "
 						+ "Terminated.");
 			return;
 		}
 
-		setSerStatus(SerStatus.RUNNING); 	// comment this line out when ECS is in control
+		// create a ECS connection socket and run communication in its own thread.
+		if (!startServerECSThread()) {
+			logger.error("Server #" + getPort() + " starting Server ECS thread failed. "
+						+ "Terminated.");
+			return;
+		}
+
+		// setSerStatus(SerStatus.RUNNING); 	// comment this line out when ECS has been implemented
 
 		loop: while (true) {
 			// catch all unexpected exceptions, only exit with break
@@ -305,25 +484,6 @@ public class KVServer extends Thread implements IKVServer {
 		return;
 	}
 
-	public boolean connectECS(){
-		try {
-			ECSSocket = new Socket(String.valueOf(this.bootstrapServer.split(":")[0]), Integer.parseInt(this.bootstrapServer.split(":")[1]));
-			output = ECSSocket.getOutputStream();
-			input = ECSSocket.getInputStream();
-
-			logger.info("ECS Connection established to: " + bootstrapServer);
-			return true;
-		} catch (UnknownHostException e) {
-			logger.error("Error! IP address for host '" + String.valueOf(this.bootstrapServer.split(":")[0])
-					+ "' cannot be found.");
-			return false;
-		} catch (IOException e) {
-			logger.error("Error! Cannot open server socket on host: '"
-					+ bootstrapServer);
-			return false;
-		}
-	}
-
 	/**
 	 * Initialize server, check if all settings are given.
 	 * @return true for success, false otherwise
@@ -353,7 +513,7 @@ public class KVServer extends Thread implements IKVServer {
 			return false;
 		}
 		// check if store (aka disk storage) has been initialized.
-		if (store == null) {
+		if ((getDirStore() == null) || (store == null)) {
 			logger.error("Server store (disk storage) not initialized. "
 						+ "Call 'initializeStore' once.");
 			setSerStatus(SerStatus.SHUTTING_DOWN);
@@ -382,13 +542,56 @@ public class KVServer extends Thread implements IKVServer {
         } catch (IOException e) {
         	logger.error("Exception! Cannot open server socket at hostname: '"
 						+ getHostname() + "' \tport: " + getPort());
-			closeServerSocket();
-			closeECSSocket();
 			setSerStatus(SerStatus.SHUTTING_DOWN);
+			closeServerSocket();
             return false;
         }
 		return true;
     }
+
+	/**
+	 * Create a ECS connection socket, and run communication in its own thread
+	 * @return true for success, false otherwise
+	 */
+	public boolean startServerECSThread() {
+		if (getBootstrapServer() == null) {
+			logger.error("Server bootstrap address not set. "
+						+ "Call 'setBootstrapServer'.");
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			closeServerSocket();
+			return false;
+		}
+		try {
+			ECSObject = new ChildObject();
+			ECSObject.childSocket = new Socket(getECSHostname(), getECSPort());
+			ECSObject.childSocket.setReuseAddress(true);
+			logger.info("Server #" + getPort() + " ECS connection established to: "
+						+ bootstrapServer);
+			// to-do
+
+		} catch (UnknownHostException e) {
+			logger.error("Server #" + getPort() + " ECS IP address for host '" 
+						+ getECSHostname() + "' cannot be found.");
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			closeServerSocket();
+			joinECSThread(true);
+			return false;
+		} catch (IOException e) {
+			logger.error("Server #" + getPort() + " cannot open ECS socket on: '"
+						+ bootstrapServer);
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			closeServerSocket();
+			joinECSThread(true);
+			return false;
+		} catch (Exception e) {
+			logger.error("Server #" + getPort() + " starting ECS thread failed.", e);
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			closeServerSocket();
+			joinECSThread(true);
+			return false;
+		}
+		return true;
+	}
 
 	/**
 	 * Close the listening socket of the server.
@@ -417,35 +620,13 @@ public class KVServer extends Thread implements IKVServer {
 		}
 	}
 
-	private void closeECSSocket() {
-		if (ECSSocket == null) {
-			return;
-		}
-		if (ECSSocket.isClosed()) {
-			ECSSocket = null;
-			return;
-		}
-		try {
-			logger.debug("Closing server #" + getPort()+ " socket...");
-			ECSSocket.close();
-			ECSSocket = null;
-		} catch (Exception e) {
-			logger.error("Unexpected Exception! Unable to close server socket"
-					+ " at host: '" + getHostname()
-					+ "' \tport: " + getPort(), e);
-			// unsolvable error, the server must be shut down now.
-			setSerStatus(SerStatus.SHUTTING_DOWN);
-			ECSSocket = null;
-		}
-	}
-
 	@Override
     public synchronized void kill(){
 		// immediately returns; should not call this, use close() instead.
 		logger.debug("Server #" + getPort() + " is being KILLED.");
 		setSerStatus(SerStatus.SHUTTING_DOWN);
+		joinECSThread(true);
         closeServerSocket();
-		closeECSSocket();
 		joinChildThreads(true);
 	}
 
@@ -454,8 +635,8 @@ public class KVServer extends Thread implements IKVServer {
 		logger.debug("Server #" + getPort() + " is shutting down.");
 		// for internal shutdown, SerStatus should be SHUTTING_DOWN before this.
 		setSerStatus(SerStatus.SHUTTING_DOWN);
+		joinECSThread(false);
 		closeServerSocket();
-		closeECSSocket();
 		joinChildThreads(false);
 	}
 
@@ -504,6 +685,73 @@ public class KVServer extends Thread implements IKVServer {
 			childObjects = null;
 		}
 	}
+	private void joinECSThread(boolean isKilling) {
+		if (ECSObject == null) {
+			return;
+		}
+		if (getECSThread() == null) {
+			closeECSSocket();
+			ECSObject = null;
+			return;
+		}
+		try{
+			logger.debug("Waiting for server #" + getPort()
+						+ "'s' ECS thread to exit...");
+			Thread ecsThread = getECSThread();
+			if (isKilling) {
+				// for kill(),
+				// absurdly interrupt child threads by closing their socket
+				closeECSSocket();
+				ecsThread.join(100);
+			} else {
+				// for close(): must let ECS complete all the works
+				ecsThread.join();
+				closeECSSocket();
+			}
+
+			logger.debug("Server #" + getPort() + "'s ECS exited.");
+			ECSObject.childSocket = null;
+			ECSObject.childThread = null;
+			ECSObject = null;
+		} catch (Exception e) {
+			logger.error("Unexpected Exception! Server #" + getPort()
+						+ " failed to wait for ECS thread to finish.", e);
+			// unsolvable error, the server must be shut down now.
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			ECSObject = null;
+		}
+	}
+
+	/**
+	 * Close the connection socket of the ECS server.
+	 * Should be called in joinECSThread().
+	 * Note: this function does not set SerStatus to SHUTTING_DOWN
+	 */
+	private void closeECSSocket() {
+		if (ECSObject == null) {
+			return;
+		}
+		Socket sock = getECSocket();
+		if (sock == null) {
+			return;
+		}
+		if (sock.isClosed()) {
+			ECSObject.childSocket = null;
+			return;
+		}
+		try {
+			logger.debug("Closing server #" + getPort()+ " ECS socket...");
+			sock.close();
+			ECSObject.childSocket = null;
+		} catch (Exception e) {
+			logger.error("Unexpected Exception! Unable to close server ECS socket"
+					+ " at host: '" + getECSHostname()
+					+ "' \tport: " + getECSPort(), e);
+			// unsolvable error, the server must be shut down now.
+			setSerStatus(SerStatus.SHUTTING_DOWN);
+			ECSObject.childSocket = null;
+		}
+	}
 
 	/**
 	 * Regularly call this method to remove exited threads from
@@ -534,6 +782,47 @@ public class KVServer extends Thread implements IKVServer {
 		}
 		return true;
 	}
+
+	/**
+	 * Transfer all KV pairs that hash to a specific keyrange to a new specified directory, 
+	 * this server is responsible to send a notice to ECS when the file transfer finishes.
+	 * In addition, it is responsible to send the server that receives the file a notice to release Write Lock.
+	 */
+    private void moveFilesTo(String dirNewStore, List<BigInteger> range) {
+		SerStatus serStatus = getSerStatus();
+		if (serStatus == SerStatus.RUNNING) {
+			setSerStatus(SerStatus.WRITE_LOCK);
+		}
+        String sourceFolder = dirStore;
+        String destinationFolder = dirNewStore;
+		
+        File srcFolder = new File(sourceFolder);
+        File destFolder = new File(destinationFolder);
+
+        File[] files = srcFolder.listFiles();
+
+		BigInteger lower = range.get(0);
+        BigInteger upper = range.get(1);
+        // Copy each files with range the source folder to the destination folder
+        for (File file : files) {
+            try {
+                BigInteger hashKey = hash(file.getName());
+                
+                if (hashKey.compareTo(lower) >= 0 && hashKey.compareTo(upper) <= 0) {
+                    Path srcPath = file.toPath();
+                    Path destPath = new File(destFolder, file.getName()).toPath();
+                    Files.copy(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
+					file.delete();
+                    logger.debug("Server #" + getPort() + " moved file "
+								+ file.getName() + " to " + destFolder.getAbsolutePath());
+                }
+            } catch (IOException e) {
+                logger.error("Server #" + getPort() + " failed to move file " + file.getName()
+							+ " due to " + e.getMessage());
+            }
+        }
+		setSerStatus(serStatus);
+    }
 
 	private static Options buildOptions() {
 		//	Setting up command line params

@@ -15,6 +15,7 @@ import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
@@ -382,22 +383,23 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         if (valueKVMsg == null) {
             return;
         }
-        valueKVMsg = valueKVMsg.substring(1, valueKVMsg.length() - 1); // remove curly braces
-        String[] pairs = valueKVMsg.split(", ");
-
-        HashMap<String, List<BigInteger>> tempMetadata = new HashMap<>();
-        // reconstruct metadata from string
-        for (String pair : pairs) {
-            String[] keyValue = pair.split(":");
-            String key = keyValue[0].replaceAll("\"", "");
-            String[] values = keyValue[1].replaceAll("\\[|\\]", "").split(",");
-            List<BigInteger> list = new ArrayList<>();
-            for (String value : values) {
-                list.add(new BigInteger(value.trim()));
-            }
-            tempMetadata.put(key, list);
+        metadata = convertStringToMetaHashmap(valueKVMsg);
+    }
+    // convert string: "range_from,range_to,ip,port;...;range_from,range_to,ip,port" to metadata hashmap
+    private HashMap<String, List<BigInteger>> convertStringToMetaHashmap(String str) {
+        HashMap<String, List<BigInteger>> metaHashmap = new HashMap<>();
+        String[] subStrs = str.split(";");
+        for (String subStr : subStrs) {
+            String[] rFrom_rTo_ip_port = subStr.split(",");
+            String ip = rFrom_rTo_ip_port[2];
+            String port = rFrom_rTo_ip_port[3];
+            BigInteger range_from = new BigInteger(rFrom_rTo_ip_port[0], 16);
+            BigInteger range_to = new BigInteger(rFrom_rTo_ip_port[1], 16);
+            String fullAddess = ip + ":" + port;
+            List<BigInteger> bigIntFrom_bigIntTo = Arrays.asList(range_from, range_to);
+            metaHashmap.put(fullAddess, bigIntFrom_bigIntTo);
         }
-        metadata = tempMetadata;
+        return metaHashmap;
     }
 
     private void printHelp() {

@@ -109,6 +109,24 @@ public class KVServerChild implements Runnable {
 					return;
 				}
 				continue;
+			} else if (statusRecv == StatusType.S2A_FINISHED_FILE_TRANSFER) {
+				/* SPECIAL CASE: this server just received KV pairs in its disk storage. */
+				SerStatus serStatus_Copy = serStatus;
+				if ((serStatus == SerStatus.RUNNING)
+					|| (serStatus == SerStatus.WRITE_LOCK)) {
+					// temporarily stop this server as it will re-initialize store
+					ptrKVServer.setSerStatus(SerStatus.STOPPED);
+				}
+				Thread.sleep(1000);
+				if (!ptrKVServer.reInitializeStore()) {
+					/* Fatal error, the shared Store cannot be re-initialized. */
+					ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
+				} else {
+					ptrKVServer.setSerStatus(serStatus_Copy);
+				}
+				// one-time connection.
+				close();
+				return;
 			}
 
 			// 1. server-status response for client request

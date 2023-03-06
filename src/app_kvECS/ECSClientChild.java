@@ -9,7 +9,10 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.math.BigInteger;
 import java.net.Socket;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -40,6 +43,47 @@ public class ECSClientChild implements Runnable {
         this.ptrECSClient = ptrECSClient;
         ecsClientPort = ptrECSClient.getPort();
     }
+
+    // convert metadata hashmap to form: range_from,range_to,ip,port;...;range_from,range_to,ip,port
+    private String convertMetaHashmapToString(HashMap<String, List<BigInteger>> metaHashmap) {
+        String value = "";
+        for (Map.Entry<String, List<BigInteger>> entry : metaHashmap.entrySet()) {
+            if (value != "") {
+                value = value + ";";
+            }
+            String fullAddress = entry.getKey();
+            List<BigInteger> bigIntFrom_bigIntTo = entry.getValue();
+            value = value + convertPairToString(fullAddress, bigIntFrom_bigIntTo);
+        }
+        return value;
+    }
+    // convert a single pair of hashmap to form: range_from,range_to,ip,port
+    private String convertPairToString(String fullAddress, List<BigInteger> bigIntFrom_bigIntTo) {
+        String[] ip_port = fullAddress.split(":");
+        String ip = ip_port[0];
+        String port = ip_port[1];
+        String range_from = bigIntFrom_bigIntTo.get(0).toString(16);
+        String range_to = bigIntFrom_bigIntTo.get(1).toString(16);
+        return range_from+","+range_to+","+ip+","+port;
+    }
+    // convert string: "range_from,range_to,ip,port;...;range_from,range_to,ip,port" to metadata hashmap
+    private HashMap<String, List<BigInteger>> convertStringToMetaHashmap(String str) {
+        HashMap<String, List<BigInteger>> metaHashmap = new HashMap<>();
+        String[] subStrs = str.split(";");
+        for (String subStr : subStrs) {
+            String[] rFrom_rTo_ip_port = subStr.split(",");
+            String ip = rFrom_rTo_ip_port[2];
+            String port = rFrom_rTo_ip_port[3];
+            BigInteger range_from = new BigInteger(rFrom_rTo_ip_port[0], 16);
+            BigInteger range_to = new BigInteger(rFrom_rTo_ip_port[1], 16);
+            String fullAddess = ip + ":" + port;
+            List<BigInteger> bigIntFrom_bigIntTo = Arrays.asList(range_from, range_to);
+            metaHashmap.put(fullAddess, bigIntFrom_bigIntTo);
+        }
+        return metaHashmap;
+    }
+
+
 
     @Override
     public void run() {
@@ -82,7 +126,7 @@ public class ECSClientChild implements Runnable {
 
                 if (ptrECSClient.addNewNode(responseHost, responsePort, valueRecv)) {
                     // Sanity check
-                    String mdString = ptrECSClient.getMetadata().toString();
+                    String mdString = convertMetaHashmapToString(ptrECSClient.getMetadata());
                     logger.info("Updated ECS copy of metadata: " + mdString);
 
                     // construct response
@@ -107,7 +151,7 @@ public class ECSClientChild implements Runnable {
                     // deal with successor node
                     String newNodeFullAddr = responseHost + ":" + responsePort;
                     String successor = ptrECSClient.successors.get(newNodeFullAddr);
-                    ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(successor).ecsClientChild;
+                    ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(successor).ecsClientChild;  // to be change
 
                     // Sets a write lock on the successor node and invoke transfer of data items
                     KVMessage successorMsgSend = new KVMessage();
@@ -119,7 +163,7 @@ public class ECSClientChild implements Runnable {
                             + "," + responsePort;
                     successorMsgSend.setValue(val);
 
-                    successorNodeRunnable.sendKVMessage(successorMsgSend);
+                    successorNodeRunnable.sendKVMessage(successorMsgSend);  // to be change
                     // Wait for the successor to send back a notification to it's own ECS child that file transfer is complete
 
                 } else {
@@ -137,7 +181,14 @@ public class ECSClientChild implements Runnable {
 
                 if (removedNode.success) {
                     KVMessage kvMsgSend = new KVMessage();
-                    kvMsgSend.setStatus(StatusType.E2S_WRITE_LOCK);
+                    kvMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
+                    // set the value with the "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port"
+                    // indicating sending all of its key range to new dir
+                    // IP, port belongs to the server that receives the file
+                    // the shuttingdown server will be responsible to send ECS and the server that receive the file a finish file transfer message
+                    // once receiving that, ECS update metadata and broadcast it to all server for a metedata update.
+                    // ^ implmented by each child thread keeps a copy of the metadata and compare to the common metedata in main ECS thread in each loop.
+                    // ^ if a difference it detected, update its own copy and send updatemetadata to its own connected server
 
                     if (!sendKVMessage(kvMsgSend)) {
                         close();
@@ -145,20 +196,23 @@ public class ECSClientChild implements Runnable {
                     }
 
                     // update successor node meta data
-                    ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(removedNode.successor).ecsClientChild;
+                    ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(removedNode.successor).ecsClientChild;  //to be change
                     KVMessage successorMsgSend = new KVMessage();
-                    String mdString = ptrECSClient.getMetadata().toString();
+                    String mdString = convertMetaHashmapToString(ptrECSClient.getMetadata());
 
                     successorMsgSend.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
                     successorMsgSend.setValue(mdString);
-                    successorNodeRunnable.sendKVMessage(successorMsgSend);
+                    successorNodeRunnable.sendKVMessage(successorMsgSend);  // to be change
 
                     // Invoke data transfer from removed node to successor node
                     kvMsgSend = new KVMessage();
                     String successorStoreDir = ptrECSClient.getHashRing().get(removedNode.successor).getStoreDir();
                     kvMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
                     // value in the format of: "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port"
-                    String val = successorStoreDir + "," + removedNode.range.get(0).toString() + "," + removedNode.range.get(1).toString() + "," + removedNode.port;
+                    String val = successorStoreDir + ","
+                                + removedNode.range.get(0).toString(16) + ","
+                                + removedNode.range.get(1).toString(16) + ","
+                                + "localhost" + "," + removedNode.port;
                     kvMsgSend.setValue(val);
 
                     if (!sendKVMessage(kvMsgSend)) {
@@ -172,14 +226,14 @@ public class ECSClientChild implements Runnable {
             } else if (statusRecv == StatusType.S2E_SHUTDOWN_REQUEST) {
                 for (Map.Entry<String, ECSClient.ChildObject> entry : ptrECSClient.childObjects.entrySet()) {
                     ECSClient.ChildObject value = entry.getValue();
-                    ECSClientChild serverNodeRunnable = value.ecsClientChild;
-                    String mdString = ptrECSClient.getMetadata().toString();
+                    ECSClientChild serverNodeRunnable = value.ecsClientChild;  // to be change
+                    String mdString = convertMetaHashmapToString(ptrECSClient.getMetadata());
 
                     KVMessage nodeMsgSend = new KVMessage();
                     nodeMsgSend.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
                     nodeMsgSend.setValue(mdString);
 
-                    serverNodeRunnable.sendKVMessage(nodeMsgSend);
+                    serverNodeRunnable.sendKVMessage(nodeMsgSend);  // to be change
                 }
             }
         }

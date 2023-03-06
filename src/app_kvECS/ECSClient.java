@@ -284,54 +284,6 @@ public class ECSClient implements IECSClient {
         }
     }
 
-    //    Transfers persisted files with key that hash to a value within range from newServerSuccessor to new server
-    private void moveFiles(KVServer newServerSuccessor, KVServer newServer, List<BigInteger> range) {
-        String sourceFolder = newServerSuccessor.getDirStore();
-        String destinationFolder = newServer.getDirStore();
-
-        File srcFolder = new File(sourceFolder);
-        File destFolder = new File(destinationFolder);
-
-        File[] files = srcFolder.listFiles();
-
-        // Copy each files with range the source folder to the destination folder
-        for (File file : files) {
-            try {
-                BigInteger hash = new BigInteger(file.getName(), 16);
-                BigInteger lower = range.get(0);
-                BigInteger upper = range.get(1);
-
-                if (hash.compareTo(lower) >= 0 && hash.compareTo(upper) <= 0) {
-                    Path srcPath = file.toPath();
-                    Path destPath = new File(destFolder, file.getName()).toPath();
-                    Files.copy(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
-                    System.out.println("Copied file " + file.getName() + " to " + destFolder.getAbsolutePath());
-                }
-                // TODO: call the servers' initialize() again after file transfer
-
-            } catch (IOException e) {
-                System.out.println("Failed to copy file " + file.getName() + " due to " + e.getMessage());
-            }
-        }
-
-        // Only delete relevant files after the transfer is fully complete so able to serve read requests from the successor in the meantime
-        for (File file : files) {
-            try {
-                BigInteger hash = new BigInteger(file.getName(), 16);
-                BigInteger lower = range.get(0);
-                BigInteger upper = range.get(1);
-
-                if (hash.compareTo(lower) >= 0 && hash.compareTo(upper) <= 0) {
-                    file.delete();
-                    System.out.println("Deleted file " + file.getName() + " from " + srcFolder.getAbsolutePath());
-                }
-
-            } catch (Exception e) {
-                System.out.println("Failed to delete file " + file.getName() + " due to " + e.getMessage());
-            }
-        }
-    }
-
     // hash string to MD5 bigint
     private BigInteger hash(String fullAddress) {
         try {
