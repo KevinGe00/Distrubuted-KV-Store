@@ -127,7 +127,6 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         } else if (tokens[0].equals("connect")){
             if(tokens.length == 3) {
                 try{
-                    disconnect();
                     serverAddress = tokens[1];
                     serverPort = Integer.parseInt(tokens[2]);
                     newConnection(serverAddress, serverPort);
@@ -151,9 +150,23 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             if(tokens.length == 2) {
                 try{
                     String key = tokens[1];
+                    // hidden from user: re-connect to the right server, if necessary
+                    if (hasReconnected(key)) {
+                        logger.debug("For GET <" + key + ">, reconnected to port "
+                                    + serverPort + ".");
+                    }
+                    // GET
                     KVMessage msg = client.get(key);
-                    // check if it is keyrange
-
+                    // hidden from user: if metadata is outdated, update and retry
+                    while (needToRequestAgain(msg)) {
+                        logger.debug("Keyrange metadata outdated, and has been updated."
+                                    + " Retrying GET <" + key + ">.");
+                        if (hasReconnected(key)) {
+                            logger.debug("For GET <" + key + ">, reconnected to port "
+                                        + serverPort + ".");
+                        }
+                        msg = client.get(key);
+                    }
 
                     switch (msg.getStatus()) {
                         case GET_SUCCESS:
@@ -198,10 +211,23 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 value = tokens[2];
             }
             try {
+                // hidden from user: re-connect to the right server, if necessary
+                if (hasReconnected(key)) {
+                    logger.debug("For PUT <" + key + ">, reconnected to port "
+                                + serverPort + ".");
+                }
+                // PUT
                 KVMessage msg = client.put(key, value);
-                // check if it is keyrange
-
-
+                // hidden from user: if metadata is outdated, update and retry
+                while (needToRequestAgain(msg)) {
+                    logger.debug("Keyrange metadata outdated, and has been updated."
+                                + " Retrying PUT <" + key + ">.");
+                    if (hasReconnected(key)) {
+                        logger.debug("For PUT <" + key + ">, reconnected to port "
+                                    + serverPort + ".");
+                    }
+                    msg = client.put(key, value);
+                }
 
                 switch (msg.getStatus()) {
                     case PUT_SUCCESS:
@@ -269,25 +295,9 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 KVMessage msg = client.getKeyrange();
                 switch (msg.getStatus()) {
                     case KEYRANGE_SUCCESS:
-                        System.out.println(PROMPT + "Keyrange: " + msg.getValue());
-                        String str = msg.getValue(); // string representation of metadata hashmap
-                        str = str.substring(1, str.length() - 1); // remove curly braces
-                        String[] pairs = str.split(", ");
-
-                        HashMap<String, List<BigInteger>> tempMetadata = new HashMap<>();
-                        // reconstruct metadata from string
-                        for (String pair : pairs) {
-                            String[] keyValue = pair.split(":");
-                            String key = keyValue[0].replaceAll("\"", "");
-                            String[] values = keyValue[1].replaceAll("\\[|\\]", "").split(",");
-                            List<BigInteger> list = new ArrayList<>();
-                            for (String value : values) {
-                                list.add(new BigInteger(value.trim()));
-                            }
-                            tempMetadata.put(key, list);
-                        }
-
-                        metadata = tempMetadata;
+                        String valueKVMsg = msg.getValue();
+                        System.out.println(PROMPT + "Keyrange: " + valueKVMsg);
+                        updateKeyrangeMetadata(valueKVMsg);
                         break;
                     case SERVER_STOPPED:
                         printError("Server is not running, ignored 'Keyrange'");
@@ -310,6 +320,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
     }
     @Override
     public void newConnection(String hostname, int port) throws Exception {
+        disconnect();
         client = new KVStore(hostname, port);
         client.connect();
         client.addListener(this);
@@ -323,20 +334,70 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         }
     }
 
+    /* Keyrange-related methods */
+    /**
+     * Check if current connected server is responsible for this key,
+     * based on cached keyrange metadata. If so, attempt re-connection.
+     * @param key the key in the request KVMessage soon to be sent
+     * @return true for did reconnect, false otherwise
+     */
+    private boolean hasReconnected(String key) throws Exception {
+        int portCopy = serverPort;
+        int portResponsible = getServerPortResponsibleForKey(key);
+        if (serverPort != portResponsible) {
+            serverPort = portResponsible;
+            try{
+                newConnection(serverAddress, serverPort);
+                return true;
+            } catch (Exception e) {
+                // if cannot connect to the suggested port, reconnect to its original port
+                logger.warn("Tried to reconnect to suggested port " + portResponsible
+                            + ", but was unable to connect. Reconnecting to original port "
+                            + portCopy + ".", e);
+                serverPort = portCopy;
+                newConnection(serverAddress, serverPort);
+                return false;
+            }
+        }
+        return false;
+    }
     /**
      * Check if server's response is NOT_RESPONSIBLE, and re-connect if needed
      * @param kvMsg KVMessage received from recent PUT or GET request
-     * @return true for needing to request again, false for 
+     * @return true for needing to request again, false otherwise
      */
-    private boolean needToRequestAgain(KVMessage kvMsg){
+    private boolean needToRequestAgain(KVMessage kvMsg) throws Exception {
         if (kvMsg.getStatus() != StatusType.SERVER_NOT_RESPONSIBLE) {
             return false;
         }
-        // to-do
-
-
-        
+        String valueKVMsg = kvMsg.getValue();
+        updateKeyrangeMetadata(valueKVMsg);
         return true;
+    }
+    /**
+     * Use value from KVMessage KEYRANGE_SUCCESS to update client's cache metadata
+     * @param valueKVMsg getValue() from KEYRANGE_SUCCESS KVMessage
+     */
+    private void updateKeyrangeMetadata(String valueKVMsg) throws Exception {
+        if (valueKVMsg == null) {
+            return;
+        }
+        valueKVMsg = valueKVMsg.substring(1, valueKVMsg.length() - 1); // remove curly braces
+        String[] pairs = valueKVMsg.split(", ");
+
+        HashMap<String, List<BigInteger>> tempMetadata = new HashMap<>();
+        // reconstruct metadata from string
+        for (String pair : pairs) {
+            String[] keyValue = pair.split(":");
+            String key = keyValue[0].replaceAll("\"", "");
+            String[] values = keyValue[1].replaceAll("\\[|\\]", "").split(",");
+            List<BigInteger> list = new ArrayList<>();
+            for (String value : values) {
+                list.add(new BigInteger(value.trim()));
+            }
+            tempMetadata.put(key, list);
+        }
+        metadata = tempMetadata;
     }
 
     private void printHelp() {
