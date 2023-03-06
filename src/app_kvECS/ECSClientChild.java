@@ -115,7 +115,7 @@ public class ECSClientChild implements Runnable {
                     // value in the format of: "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port"
                     String val = valueRecv + ","
                             + ptrECSClient.getMetadata().get(newNodeFullAddr).get(0)
-                            + "," + ptrECSClient.getMetadata().get(newNodeFullAddr).get(0)
+                            + "," + ptrECSClient.getMetadata().get(newNodeFullAddr).get(1)
                             + "," + responsePort;
                     successorMsgSend.setValue(val);
 
