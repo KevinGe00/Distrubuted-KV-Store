@@ -9,3 +9,6 @@ m2-server.jar
 m2-ecs.jar
 m2-client.jar
 out/
+test_out/
+m2-performance.jar
+PERFORMANCE_MANIFEST.MF
