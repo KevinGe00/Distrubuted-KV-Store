@@ -99,6 +99,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 }
             }
         }
+        logger.error("could find server port for key: " + key);
         return 0;
     };
 
