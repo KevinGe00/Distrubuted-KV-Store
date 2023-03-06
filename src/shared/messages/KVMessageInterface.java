@@ -22,11 +22,21 @@ public interface KVMessageInterface {
 
 		NOT_SET,			/* Custom: placeholder for new KVMessage */
 
-		ECS_SERVER_RUN,     /* ECS tells server to RUN */
-		ECS_SERVER_STOP,   /* ECS tells server to STOP */
-		ECS_SERVER_STOP_SUCCESS,    /* Server tells ECS that it has died */
-		ECS_SERVER_WRITE_LOCK,      /* ECS tells server to enter WRITE_LOCK */
-		ECS_SERVER_TRANSFER_COMPLETE,   /* Server tells ECS that it has finished file transfer */
+
+		// a new server starting
+		S2E_INIT_REQUEST_WITH_DIR, 			/* Server -> ECS:  a new server's first message to ECS, with disk directory in Value */
+		E2S_INIT_RESPONSE_WITH_META, 		/* ECS -> Server:  response to prior message, with keyrange metadata in Value */
+		E2S_COMMAND_SERVER_RUN, 			/* ECS -> Server:  after ECS sent E2S_INIT_RESPONSE_WITH_META, ECS sent this message to the server to set its status to RUNNING. */
+
+		// following messages used within while loop
+		E2S_EMPTY_CHECK, 					/* ECS -> Server:  after last ECS receiveMessage(), if ECS has no command or update for this server, after a certain sleep time, ECS will send this message with no Key or Value. */
+		S2E_EMPTY_RESPONSE, 				/* Server -> ECS:  after last server receiveMessage(), if the server is not going to shutdown and is not required to respond with specific message, the server will send this message with no Key or Value. */
+		S2E_SHUTDOWN_REQUEST, 				/* Server -> ECS:  after last server receiveMessage(), if the server is going to shutdown, the server will send this message with no Key or Value. */
+		E2S_WRITE_LOCK, 					/* ECS -> Server:  after receiving S2E_REQUEST_SHUTDOWN, ECS sends write lock to removed node but data transfer is invoked on successor node */
+		E2S_WRITE_LOCK_WITH_KEYRANGE, 		/* ECS -> Server:  after receiving S2E_REQUEST_SHUTDOWN or accepting a new connection, ECS does not need to sleep, and will send this message to the corresponding server with Value being a single String: "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port" */
+		S2E_FINISHED_FILE_TRANSFER, 		/* Server -> ECS:  after receiving E2S_WRITE_LOCK_WITH_KEYRANGE, the server will send this message (no key, no value) to ECS after it finishes file transfer, write lock is not removed yet. For shutting-down server, this will be the last message. */
+		E2S_UPDATE_META_AND_RUN 			/* ECS -> Server:  after receiving S2E_FINISHED_FILE_TRANSFER, the server does not need to sleep, and will send this message (value being metadata) to the server to update its keyrange metadata and remove its write lock. */
+											/*                 this message can also be sent to a server when a new server connection is accepted to update its keyrange metadata. */
 	}
 
 	// set and get methods for Status
