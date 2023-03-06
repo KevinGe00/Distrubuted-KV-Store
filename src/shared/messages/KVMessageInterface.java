@@ -26,21 +26,16 @@ public interface KVMessageInterface {
 		// a new server starting
 		S2E_INIT_REQUEST_WITH_DIR, 			/* Server -> ECS:  a new server's first message to ECS, with disk directory in Value */
 		E2S_INIT_RESPONSE_WITH_META, 		/* ECS -> Server:  response to prior message, with keyrange metadata in Value */
-		// or, a server shutting down:
-		S2E_SHUTDOWN_REQUEST, 				/* Server -> ECS:  a server, that has disconnect and re-connect with ECS in order to request its owm shutdown, sends this message as its first message to ECS since the new connection. */
-		// note:  for the server to take the initiative (avoid blocked by its own receiveMessage() waiting for the following ECS commands), when a server needs to shut down, it will disconnect from ECS first then reconnect to ECS with the prior S2E_SHUTDOWN_REQUEST message.
+		E2S_COMMAND_SERVER_RUN, 			/* ECS -> Server:  after ECS sent E2S_INIT_RESPONSE_WITH_META, ECS sent this message to the server to set its status to RUNNING. */
 
-
-		E2S_COMMAND_SERVER_RUN, 			/* ECS -> Server:  since a new server starts with STOPPED status, ECS sends this message (without key or value) to the server to set it RUNNING to accept client requests. */
-		 									/*                 for this message, the server does not respond ECS. Therefore, after ECS sends E2S_COMMAND_SERVER_RUN, ECS must NOT call receiveMessage(). */
-
-		E2S_WRITE_LOCK_WITH_KEYRANGE, 		/* ECS -> Server:  when a new server connects to ECS, ECS sends this to other keyrange-changing servers that need to transfer files and be Locked for Write, with Value being a single String "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port" */
-											/*                 this message is also used by ECS to respond to S2E_SHUTDOWN_REQUEST in order to Lock Write of the server that requested shut down. */
-		S2E_FINISHED_FILE_TRANSFER, 		/* Server -> ECS:  after the server finished file transfer, the server responds to prior message with this. No key or value. (Write Lock has not been released)*/
-											/*                 if the server has requested to shutdown itself before, the server will actually shutdown after sending this message to ECS. */
-
-		E2S_UPDATE_META_AND_RUN, 			/* ECS -> Server:  ECS takes the initiative to send this message to a server in order to update its keyrange metadata, with full keyrange metadata in Value. Once the server receives it, no matter if the server is Locked for Write, it will become RUNNING.*/
-											/*                 for this message, the server does not respond ECS. Therefore, after ECS sends E2S_UPDATE_META_AND_RUN, ECS must NOT call receiveMessage(). */
+		// following messages used within while loop
+		E2S_EMPTY_CHECK, 					/* ECS -> Server:  after last ECS receiveMessage(), if ECS has no command or update for this server, after a certain sleep time, ECS will send this message with no Key or Value. */
+		S2E_EMPTY_RESPONSE, 				/* Server -> ECS:  after last server receiveMessage(), if the server is not going to shutdown and is not required to respond with specific message, the server will send this message with no Key or Value. */
+		S2E_SHUTDOWN_REQUEST, 				/* Server -> ECS:  after last server receiveMessage(), if the server is going to shutdown, the server will send this message with no Key or Value. */
+		E2S_WRITE_LOCK_WITH_KEYRANGE, 		/* ECS -> Server:  after receiving S2E_REQUEST_SHUTDOWN or accepting a new connection, ECS does not need to sleep, and will send this message to the corresponding server with Value being a single String: "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port" */
+		S2E_FINISHED_FILE_TRANSFER, 		/* Server -> ECS:  after receiving E2S_WRITE_LOCK, the server will send this message (no key, no value) to ECS after it finishes file transfer, write lock is not removed yet. For shutting-down server, this will be the last message. */
+		E2S_UPDATE_META_AND_RUN 			/* ECS -> Server:  after receiving S2E_FINISHED_FILE_TRANSFER, the server does not need to sleep, and will send this message (value being metadata) to the server to update its keyrange metadata and remove its write lock. */
+											/*                 this message can also be sent to a server when a new server connection is accepted to update its keyrange metadata. */
 	}
 
 	// set and get methods for Status
