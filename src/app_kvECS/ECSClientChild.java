@@ -82,7 +82,7 @@ public class ECSClientChild implements Runnable {
 
                 if (ptrECSClient.addNewNode(responseHost, responsePort, valueRecv)) {
                     // Sanity check
-                    String mdString = String.valueOf(ptrECSClient.getMetadata());
+                    String mdString = ptrECSClient.getMetadata().toString();
                     logger.info("Updated ECS copy of metadata: " + mdString);
 
                     // construct response
@@ -147,7 +147,7 @@ public class ECSClientChild implements Runnable {
                     // update successor node meta data
                     ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(removedNode.successor).ecsClientChild;
                     KVMessage successorMsgSend = new KVMessage();
-                    String mdString = String.valueOf(ptrECSClient.getMetadata());
+                    String mdString = ptrECSClient.getMetadata().toString();
 
                     successorMsgSend.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
                     successorMsgSend.setValue(mdString);
@@ -173,7 +173,7 @@ public class ECSClientChild implements Runnable {
                 for (Map.Entry<String, ECSClient.ChildObject> entry : ptrECSClient.childObjects.entrySet()) {
                     ECSClient.ChildObject value = entry.getValue();
                     ECSClientChild serverNodeRunnable = value.ecsClientChild;
-                    String mdString = String.valueOf(ptrECSClient.getMetadata());
+                    String mdString = ptrECSClient.getMetadata().toString();
 
                     KVMessage nodeMsgSend = new KVMessage();
                     nodeMsgSend.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
