@@ -26,12 +26,36 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 public class ECSClient implements IECSClient {
+    /**
+     * Datatype containing a pair of response socket and thread.
+     */
+    class ChildObject {
+        public Thread childThread;
+        public Socket childSocket;
+        public ECSClientChild ecsClientChild;
+    }
+
+    class RemovedNode {
+        public Boolean success;
+        public int port;
+        public String storeDir;
+        public List<BigInteger> range;
+        public String successor;
+    }
+
     private static Logger logger = Logger.getRootLogger();
     private String address;
     private int port;
     private boolean running = true;
     private ServerSocket serverSocket;
     private BufferedReader stdin;
+    public HashMap<String, ChildObject> childObjects;
+    public HashMap<String, String> successors;
+
+    public HashMap<BigInteger, IECSNode> getHashRing() {
+        return hashRing;
+    }
+
     private HashMap<BigInteger, IECSNode> hashRing = new HashMap<>();
     //mapping of KVServers (defined by their IP:Port) and the associated range of hash value
     private HashMap<String, List<BigInteger>> metadata = new HashMap<>();
@@ -39,6 +63,9 @@ public class ECSClient implements IECSClient {
     public ECSClient(String address, int port) {
         this.address = address;
         this.port = port;
+    }
+    public HashMap<String, List<BigInteger>> getMetadata() {
+        return metadata;
     }
 
     public boolean getRunning(){
@@ -71,6 +98,11 @@ public class ECSClient implements IECSClient {
             closeServerSocket();
             return;
         }
+
+        // initialize client object(thread + socket) arraylist
+        childObjects = new HashMap<>();
+
+        successors = new HashMap<>();
     }
 
     /*
@@ -149,29 +181,47 @@ public class ECSClient implements IECSClient {
         return null;
     }
 
-    // TODO: call this during add server hook
-    // return true on success, otherwise false
-    private boolean addNewNode(String serverHost, int serverPort) {
+    /**
+     * @param serverHost host name of server to be added as node
+     * @param serverPort port of server to be added as node
+     * @param storeDir path to storage directory of server
+     * @return true on success, otherwise false
+     */
+    public boolean addNewNode(String serverHost, int serverPort, String storeDir) {
         try {
-            BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort);
-            updateMetadataWithNewNode("localhost" + ":" + 5000, position);
-
+            String fullAddress =  serverHost + ":" + serverPort;
+            BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
+            updateMetadataWithNewNode(fullAddress, position);
             return true;
         } catch (Exception e) {
             return false;
         }
     }
 
-    // TODO: call this during add shutdown hook
-    // return true on success, otherwise false
-    private boolean removeNode(String serverHost, int serverPort) {
-        try {
-            removeServerNodeFromHashRing(serverHost, serverPort);
-            updateMetadataAfterNodeRemoval("localhost" + ":" + 5000);
+    /**
+     * @param serverHost host name of server removed
+     * @param serverPort port of server removed
+     * @return true and storage dir of removed node, and it's keyrange on success, otherwise false and null string otherwise
+     */
+    public RemovedNode removeNode(String serverHost, int serverPort) {
+        RemovedNode rn =  new RemovedNode();
 
-            return true;
+        try {
+            String fullAddress =  serverHost + ":" + serverPort;
+            String removedNodeStoreDir = removeServerNodeFromHashRing(serverHost, serverPort);
+            List<BigInteger> removedNodeRange = updateMetadataAfterNodeRemoval(fullAddress);
+
+            rn.success = true;
+            rn.storeDir = removedNodeStoreDir;
+            rn.range = removedNodeRange;
+            rn.successor = successors.get(fullAddress);
+
+            successors.remove(fullAddress);
+
+            return rn;
         } catch (Exception e) {
-            return false;
+            rn.success = false;
+            return rn;
         }
     }
 
@@ -210,6 +260,7 @@ public class ECSClient implements IECSClient {
                     successorRange.set(1, position);
                     metadata.put(key, successorRange);
 
+                    successors.put(fullAddress, key);
                     inserted = true;
                     break;
                 }
@@ -293,33 +344,37 @@ public class ECSClient implements IECSClient {
             throw new RuntimeException(e);
         }
     }
-    private BigInteger addNewServerNodeToHashRing(String serverHost, int serverPort) {
+    private BigInteger addNewServerNodeToHashRing(String serverHost, int serverPort, String storeDir) {
         String fullAddress =  serverHost + ":" + serverPort;
         BigInteger hashInt = hash(fullAddress);
 
         // Create new ECSNode
         String nodeName = "Server:" + fullAddress;
-        ECSNode node = new ECSNode(nodeName, serverHost, serverPort);
+        ECSNode node = new ECSNode(nodeName, serverHost, serverPort, storeDir);
 
         hashRing.put(hashInt, node);
         return hashInt;
     }
 
-    private void removeServerNodeFromHashRing(String serverHost, int serverPort) {
+    private String removeServerNodeFromHashRing(String serverHost, int serverPort) {
         String fullAddress =  serverHost + ":" + serverPort;
         BigInteger key = hash(fullAddress);
 
         if (!this.hashRing.containsKey(key)) {
             System.out.println("Error: Key '" + key + "' not found in hashmap");
+            return "";
         } else {
+            String removedNodeStoreDir = this.hashRing.get(key).getStoreDir();
+
             this.hashRing.remove(key);
+            return removedNodeStoreDir;
         }
     };
 
     /**
      * @param fullAddress IP:port of removed server
      */
-    public void updateMetadataAfterNodeRemoval (String fullAddress) {
+    public List<BigInteger> updateMetadataAfterNodeRemoval (String fullAddress) {
         if (metadata.containsKey(fullAddress)) {
             BigInteger nodeToRemoveRangeStart = metadata.get(fullAddress).get(0);
             BigInteger nodeToRemoveRangeEnd = metadata.get(fullAddress).get(1);
@@ -331,6 +386,7 @@ public class ECSClient implements IECSClient {
                 BigInteger rangeStart = entry.getValue().get(0);
                 int comparisonResult = rangeStart.compareTo(nodeToRemoveRangeStart);
                 if (comparisonResult > 0) {
+                    List<BigInteger> removedNodeRange = metadata.get(fullAddress);
                     metadata.remove(fullAddress);
 
                     // extend the range of the successor node to cover removed node range
@@ -338,10 +394,11 @@ public class ECSClient implements IECSClient {
                     successorRange.set(1, nodeToRemoveRangeEnd);
                     metadata.put(key, successorRange);
     //                moveFiles(successor, serverToRemove, Arrays.asList(nodeToRemoveRangeStart, nodeToRemoveRangeEnd))
-                    break;
+                    return removedNodeRange;
                 }
             }
         }
+        return null;
     }
 
     // return sorted nodes in metadata map by the start of their key-range
@@ -384,18 +441,22 @@ public class ECSClient implements IECSClient {
                 if (serverSocket != null) {
                     while (true) {
                         try {
-                            Socket clientSocket = serverSocket.accept();
+                            // blocked until receiving a connection from a KVServer
+                            Socket responseSocket = serverSocket.accept(); // a connection from the server
                             logger.info("Connected to "
-                                    + clientSocket.getInetAddress().getHostName()
-                                    + " on port " + clientSocket.getPort());
-
-                            housekeepClientThreads();
-                            ServerECSConnection connection =
-                                    new ServerECSConnection(clientSocket, ECSClient.this);
-                            Thread client = new Thread(connection);
-                            clients.add(client);
-                            client.start();
-
+                                    + responseSocket.getInetAddress().getHostName()
+                                    + " on port " + responseSocket.getPort());
+                            ECSClientChild childRunnable = new ECSClientChild(responseSocket, ECSClient.this);
+                            Thread childThread = new Thread(childRunnable);
+                            ChildObject childObject = new ChildObject();
+                            // record response socket and child thread in a pair
+                            childObject.childSocket = responseSocket;
+                            childObject.childThread = childThread;
+                            childObject.ecsClientChild = childRunnable;
+                            // map addr:port to runnable
+                            childObjects.put(responseSocket.getInetAddress().getHostName() + ":" + responseSocket.getPort(), childObject);
+                            // start the child thread
+                            childThread.start();
 
                         } catch (IOException e) {
                             if (running) {
@@ -424,15 +485,6 @@ public class ECSClient implements IECSClient {
 
     }
 
-    private void housekeepClientThreads() {
-        Iterator<Thread> iterClients = clients.iterator();
-        while (iterClients.hasNext()) {
-            Thread client = iterClients.next();
-            if (!client.isAlive()) {
-                iterClients.remove();
-            }
-        }
-    }
 
     public void handleCommand(String cmdLine) {
         String[] tokens = cmdLine.split("\\s+");
@@ -490,23 +542,6 @@ public class ECSClient implements IECSClient {
             new LogSetup("logs/ecs.log", Level.toLevel(logLevelString));
 
             ecsClient.initializeServer();
-            // testing, remove later
-            BigInteger one = ecsClient.addNewServerNodeToHashRing("localhost", 5000);
-            ecsClient.updateMetadataWithNewNode("localhost" + ":" + 5000, one);
-            BigInteger two = ecsClient.addNewServerNodeToHashRing("localhost", 6000);
-            ecsClient.updateMetadataWithNewNode("localhost" + ":" + 6000, two);
-            BigInteger three = ecsClient.addNewServerNodeToHashRing("localhost", 7000);
-            ecsClient.updateMetadataWithNewNode("localhost" + ":" + 7000, three);
-            for (Map.Entry<BigInteger, IECSNode> entry : ecsClient.hashRing.entrySet()) {
-                BigInteger key = entry.getKey();
-                String value = String.valueOf(entry.getValue().getNodePort());
-                System.out.println(key + value);
-            }
-            for (Map.Entry<String, List<BigInteger>> entry : ecsClient.metadata.entrySet()) {
-                String key = entry.getKey();
-                List<BigInteger> value = entry.getValue();
-                System.out.println(key + ": " + value);
-            }
             ecsClient.run();
         } catch (NumberFormatException nfe) {
             System.out.println("Error! Invalid argument <port>! Not a number!");

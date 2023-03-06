@@ -12,11 +12,13 @@ public class ECSNode implements IECSNode{
     private String name;
     private String host;
     private int port;
+    private String storeDir;
     private Status status;
-    public ECSNode(String name, String host, int port) {
+    public ECSNode(String name, String host, int port, String storeDir) {
         this.name = name;
         this.host = host;
         this.port = port;
+        this.storeDir = storeDir;
         this.status = Status.STOPPED;
     }
 
@@ -39,4 +41,8 @@ public class ECSNode implements IECSNode{
     public String[] getNodeHashRange() {
         return new String[0];
     }
+    public String getStoreDir() {
+        return storeDir;
+    }
+
 }
