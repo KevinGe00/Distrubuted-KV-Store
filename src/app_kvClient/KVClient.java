@@ -10,7 +10,13 @@ import org.apache.log4j.Logger;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.math.BigInteger;
 import java.net.UnknownHostException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 import shared.messages.KVMessage;
 import shared.messages.KVMessageInterface.StatusType;
@@ -25,8 +31,8 @@ public class KVClient implements ClientSocketListener, IKVClient  {
     private String serverAddress;
     private int serverPort;
 
-    // cached server metadata
-    private String metadata = null;
+    // most recent mapping of KVServers (defined by their IP:Port) and the associated range of hash value
+    private HashMap<String, List<BigInteger>> metadata = new HashMap<>();
 
     public KVClient() throws IOException {
     }
@@ -45,6 +51,69 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             }
         }
     }
+
+    // hash string to MD5 bigint
+    private BigInteger hash(String s) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.update(s.getBytes());
+            byte[] digest = md.digest();
+            return new BigInteger(1, digest);
+        } catch (NoSuchAlgorithmException e) {
+            logger.error(e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private boolean isBounded(BigInteger number, BigInteger lowerBound, BigInteger upperBound) {
+        return number.compareTo(lowerBound) >= 0 && number.compareTo(upperBound) <= 0;
+    }
+
+    // input is key in KV storage, return the port of the (optimistically) KVServer responsible for it
+    private int getServerPortResponsibleForKey(String key) {
+        BigInteger keyAsHash = hash(key);
+
+        for (String server : metadata.keySet()) {
+            List<BigInteger> value = metadata.get(server);
+            BigInteger currServerRangeStart = value.get(0);
+            BigInteger currServerRangeEnd = value.get(1);
+
+            if (currServerRangeEnd == BigInteger.ZERO) {
+                if (keyAsHash.compareTo(currServerRangeStart) >= 0) {
+                    // file is hashed to the end of the hash ring between last server (highest hash value) and dummy between
+                    int port = Integer.parseInt(server.split(":")[1]); // keys in metadata are hostname:port
+                    return port;
+                }
+            } else {
+                if (isBounded(keyAsHash, currServerRangeStart, currServerRangeEnd)) {
+                    if (currServerRangeStart == BigInteger.ZERO) {
+                        // Handling dummy node case:
+                        // if our key lands in the dummy node's key range, it's actually the dummy node's predecessor
+                        // that should handle this key, we need to find that predecessor
+                        return getLastNodeInHashRing();
+                    } else {
+                        // otherwise, simply return this server's port
+                        int port = Integer.parseInt(server.split(":")[1]); // keys in metadata are hostname:port
+                        return port;
+                    }
+                }
+            }
+        }
+        return 0;
+    };
+
+    // get port of logically highest node in ring
+    private int getLastNodeInHashRing() {
+        for (String s : metadata.keySet()) {
+            List<BigInteger> val = metadata.get(s);
+            BigInteger serverRangeEnd = val.get(1);
+            if (serverRangeEnd == BigInteger.ZERO) {
+                int port = Integer.parseInt(s.split(":")[1]); // keys in metadata are hostname:port
+                return port;
+            }
+        }
+        return 0;
+    };
 
     public void handleCommand(String cmdLine) {
         String[] tokens = cmdLine.split("\\s+");
@@ -200,7 +269,24 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 switch (msg.getStatus()) {
                     case KEYRANGE_SUCCESS:
                         System.out.println(PROMPT + "Keyrange: " + msg.getValue());
-                        metadata = msg.getValue();
+                        String str = msg.getValue(); // string representation of metadata hashmap
+                        str = str.substring(1, str.length() - 1); // remove curly braces
+                        String[] pairs = str.split(", ");
+
+                        HashMap<String, List<BigInteger>> tempMetadata = new HashMap<>();
+                        // reconstruct metadata from string
+                        for (String pair : pairs) {
+                            String[] keyValue = pair.split(":");
+                            String key = keyValue[0].replaceAll("\"", "");
+                            String[] values = keyValue[1].replaceAll("\\[|\\]", "").split(",");
+                            List<BigInteger> list = new ArrayList<>();
+                            for (String value : values) {
+                                list.add(new BigInteger(value.trim()));
+                            }
+                            tempMetadata.put(key, list);
+                        }
+
+                        metadata = tempMetadata;
                         break;
                     case SERVER_STOPPED:
                         printError("Server is not running, ignored 'Keyrange'");
