@@ -5,6 +5,8 @@ import app_kvServer.KVServer;
 import ecs.ECSNode;
 import ecs.IECSNode;
 import logger.LogSetup;
+import shared.messages.KVMessage;
+
 import org.apache.commons.cli.*;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -32,7 +34,6 @@ public class ECSClient implements IECSClient {
     class ChildObject {
         public Thread childThread;
         public Socket childSocket;
-        public ECSClientChild ecsClientChild;
     }
 
     class RemovedNode {
@@ -43,6 +44,11 @@ public class ECSClient implements IECSClient {
         public String successor;
     }
 
+    public static class WLPackage {
+        public boolean needsWL;
+        public String valueSend;
+    }
+
     private static Logger logger = Logger.getRootLogger();
     private String address;
     private int port;
@@ -51,6 +57,7 @@ public class ECSClient implements IECSClient {
     private BufferedReader stdin;
     public HashMap<String, ChildObject> childObjects;
     public HashMap<String, String> successors;
+    public HashMap<String, WLPackage> wlPackages;
 
     public HashMap<BigInteger, IECSNode> getHashRing() {
         return hashRing;
@@ -103,6 +110,8 @@ public class ECSClient implements IECSClient {
         childObjects = new HashMap<>();
 
         successors = new HashMap<>();
+
+        wlPackages = new HashMap<>();
     }
 
     /*
@@ -217,6 +226,7 @@ public class ECSClient implements IECSClient {
             rn.successor = successors.get(fullAddress);
 
             successors.remove(fullAddress);
+            wlPackages.remove(fullAddress);
 
             return rn;
         } catch (Exception e) {
@@ -266,6 +276,10 @@ public class ECSClient implements IECSClient {
                     metadata.put(key, successorRange);
 
                     successors.put(fullAddress, key);
+                    WLPackage pck = new WLPackage();
+                    pck.needsWL = false;
+                    pck.valueSend = "";
+                    wlPackages.put(fullAddress, pck);
                     inserted = true;
                     break;
                 }
@@ -409,7 +423,6 @@ public class ECSClient implements IECSClient {
                             // record response socket and child thread in a pair
                             childObject.childSocket = responseSocket;
                             childObject.childThread = childThread;
-                            childObject.ecsClientChild = childRunnable;
                             // map addr:port to runnable
                             childObjects.put(responseSocket.getInetAddress().getHostName() + ":" + responseSocket.getPort(), childObject);
                             // start the child thread

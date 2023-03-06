@@ -2,6 +2,8 @@ package app_kvECS;
 
 import app_kvServer.KVServer;
 import org.apache.log4j.Logger;
+
+import app_kvECS.ECSClient.WLPackage;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageInterface;
 
@@ -31,6 +33,8 @@ public class ECSClientChild implements Runnable {
     // note: DataInput/OutputStream does not need to be closed.
     private DataInputStream input;
     private DataOutputStream output;
+    // copy of keyrange metadata, when different from the parent's metadata
+    String strMetadata;
 
     public ECSClientChild(Socket responseSocket, ECSClient ptrECSClient) {
         this.responseSocket = responseSocket;
@@ -39,6 +43,7 @@ public class ECSClientChild implements Runnable {
         responsePort = responseSocket.getPort();
         this.ptrECSClient = ptrECSClient;
         ecsClientPort = ptrECSClient.getPort();
+        strMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata());
     }
 
     // convert metadata hashmap to form: range_from,range_to,ip,port;...;range_from,range_to,ip,port
@@ -80,70 +85,66 @@ public class ECSClientChild implements Runnable {
         return metaHashmap;
     }
 
-
-
     @Override
     public void run() {
         try {
             input = new DataInputStream(new BufferedInputStream(responseSocket.getInputStream()));
             output = new DataOutputStream(new BufferedOutputStream(responseSocket.getOutputStream()));
         } catch (Exception e) {
-            logger.error("Failed to create data stream for child socket of server #"
+            logger.error("Failed to create data stream for ECS #"
                     + ecsClientPort+ " connected to IP: '"+ responseIP + "' \t port: "
                     + responsePort, e);
             close();
         }
 
-        while (true) {
-            // === receive message ===
-            KVMessage kvMsgRecv = null;
-            try {
-                // block until receiving response, exception when socket closed
-                kvMsgRecv = receiveKVMessage();
-            } catch (Exception e) {
-                logger.error("Exception when receiving message at child socket of server #"
-                        + ecsClientPort+ " connected to IP: '"+ responseIP + "' \t port: "
-                        + responsePort
-                        + " Not an error if caused by manual interrupt.", e);
-                close();
-                return;
-            }
+        // expect: init request with dir
+        KVMessage kvMsgRecv = null;
+		StatusType statusRecv = null;
+		String keyRecv = null;
+		String valueRecv = null;
+        try {
+            // block until receiving response, exception when socket closed
+            kvMsgRecv = receiveKVMessage();
+        } catch (Exception e) {
+            logger.error("Exception when receiving initialization message at ECS #"
+                    + ecsClientPort+ " connected to IP: '"+ responseIP + "' \t port: "
+                    + responsePort
+                    + ".", e);
+            close();
+            return;
+        }
+        statusRecv = kvMsgRecv.getStatus();
+        valueRecv = kvMsgRecv.getValue();
+        if (statusRecv == StatusType.S2E_INIT_REQUEST_WITH_DIR) {
+            // After a new server has established a connection with the ECS we need to
+            // 1. Determines the position of the new storage server
+            // 2. Recalculate and update the meta-data of the storage service
+            // 3. Send the new storage server with the updated meta-data
+            // 4. Set write lock on successor node and invoke data transfer
 
-            // === process received message, and reply ===
-            KVMessageInterface.StatusType statusRecv = kvMsgRecv.getStatus();
-            String keyRecv = kvMsgRecv.getKey();
-            String valueRecv = kvMsgRecv.getValue();
+            if (ptrECSClient.addNewNode(responseHost, responsePort, valueRecv)) {
+                // Sanity check
+                String mdString = convertMetaHashmapToString(ptrECSClient.getMetadata());
+                logger.info("Updated ECS copy of metadata: " + mdString);
 
-            if (statusRecv == StatusType.S2E_INIT_REQUEST_WITH_DIR) {
-                // After a new server has established a connection with the ECS we need to
-                // 1. Determines the position of the new storage server
-                // 2. Recalculate and update the meta-data of the storage service
-                // 3. Send the new storage server with the updated meta-data
-                // 4. Set write lock on successor node and invoke data transfer
+                // construct response
+                KVMessage kvMsgSend = new KVMessage();
+                kvMsgSend.setStatus(StatusType.E2S_INIT_RESPONSE_WITH_META);
+                kvMsgSend.setValue(mdString);
 
-                if (ptrECSClient.addNewNode(responseHost, responsePort, valueRecv)) {
-                    // Sanity check
-                    String mdString = convertMetaHashmapToString(ptrECSClient.getMetadata());
-                    logger.info("Updated ECS copy of metadata: " + mdString);
+                if (!sendKVMessage(kvMsgSend)) {
+                    close();
+                    return;
+                }
 
-                    // construct response
-                    KVMessage kvMsgSend = new KVMessage();
-                    kvMsgSend.setStatus(StatusType.E2S_INIT_RESPONSE_WITH_META);
-                    kvMsgSend.setValue(mdString);
+                // server received metadata, tell it to go from stopped to start
+                kvMsgSend = new KVMessage();
+                kvMsgSend.setStatus(StatusType.E2S_COMMAND_SERVER_RUN);
 
-                    if (!sendKVMessage(kvMsgSend)) {
-                        close();
-                        return;
-                    }
-
-                    // server received metadata, tell it to go from stopped to start
-                    kvMsgSend = new KVMessage();
-                    kvMsgSend.setStatus(StatusType.E2S_COMMAND_SERVER_RUN);
-
-                    if (!sendKVMessage(kvMsgSend)) {
-                        close();
-                        return;
-                    }
+                if (!sendKVMessage(kvMsgSend)) {
+                    close();
+                    return;
+                }
 
                     // deal with successor node
                     String newNodeFullAddr = responseHost + ":" + responsePort;
@@ -153,29 +154,101 @@ public class ECSClientChild implements Runnable {
                     System.out.println(successor);
 
 
-                    // Sets a write lock on the successor node and invoke transfer of data items
-                    KVMessage successorMsgSend = new KVMessage();
-                    successorMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
-                    // value in the format of: "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port"
-                    String val = valueRecv + ","
-                            + ptrECSClient.getMetadata().get(newNodeFullAddr).get(0)
-                            + "," + ptrECSClient.getMetadata().get(newNodeFullAddr).get(1)
-                            + ",localhost," + responsePort;
-                    successorMsgSend.setValue(val);
+                // indicate the successor to send WL message
+                // Sets a write lock on the successor node and invoke transfer of data items
+                KVMessage successorMsgSend = new KVMessage();
+                successorMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
+                // value in the format of: "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port"
+                String val = valueRecv + ","
+                        + ptrECSClient.getMetadata().get(newNodeFullAddr).get(0)
+                        + "," + ptrECSClient.getMetadata().get(newNodeFullAddr).get(1)
+                        + ",localhost," + responsePort;
+                successorMsgSend.setValue(val);
 
-                    if (successor.equals("dummy:1000")) {
-                        sendKVMessage(successorMsgSend);
-                    } else {
-                        ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(successor).ecsClientChild;  // to be change
-                        successorNodeRunnable.sendKVMessage(successorMsgSend);  // to be change
-                    }
-                    // Wait for the successor to send back a notification to it's own ECS child that file transfer is complete
+                WLPackage pck;
+                pck = new WLPackage();
+                pck.needsWL = true;
+                pck.valueSend = val;
+                ptrECSClient.wlPackages.put(successor, pck);
+                // Wait for the successor to send back a notification to it's own ECS child that file transfer is complete
 
-                } else {
-                    logger.error("Failed to add server to ECS " + "IP: '"+ responseIP + "' \t port: "
-                            + responsePort);
+            } else {
+                logger.error("Failed to add server to ECS " + "IP: '"+ responseIP + "' \t port: "
+                        + responsePort);
+                close();
+                return;
+            }
+        } else {
+            // first must be an init request
+            logger.error("Not an init request.");
+            close();
+            return;
+        }
+        boolean skipSleep = false;
+
+        while (true) {
+            if (!skipSleep) {
+                try {
+                Thread.sleep(500);
+                } catch (Exception e) {}
+            }
+            skipSleep = false;
+
+            // check your WLPack
+            String fullAddress = responseHost + ":" + responsePort;
+            WLPackage pck = ptrECSClient.wlPackages.get(fullAddress);
+            // if true, send a WL to your own server
+            if (pck.needsWL) {
+                KVMessage msg = new KVMessage();
+                msg.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
+                msg.setValue(pck.valueSend);
+                if (!sendKVMessage(msg)) {
+                    close();
+                    return;
                 }
-            } else if (statusRecv == StatusType.S2E_SHUTDOWN_REQUEST) {
+                skipSleep = true;
+            } else if (strMetadata != convertMetaHashmapToString(ptrECSClient.getMetadata())) {
+                // if metadata has been updated, send update.
+                strMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata());
+                KVMessage kvMsg = new KVMessage();
+                kvMsg.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
+                kvMsg.setValue(strMetadata);
+                if (!sendKVMessage(emptyCheck())) {
+                    close();
+                    return;
+                }
+            } else {
+                if (!sendKVMessage(emptyCheck())) {
+                    close();
+                    return;
+                }
+            }
+
+            // === receive message ===
+            kvMsgRecv = null;
+            try {
+                // block until receiving response, exception when socket closed
+                kvMsgRecv = receiveKVMessage();
+            } catch (Exception e) {
+                logger.error("Exception when receiving message at ECS #"
+                        + ecsClientPort+ " connected to IP: '"+ responseIP + "' \t port: "
+                        + responsePort
+                        + ".", e);
+                close();
+                return;
+            }
+
+            // === process received message, and reply ===
+            statusRecv = kvMsgRecv.getStatus();
+            keyRecv = kvMsgRecv.getKey();
+            valueRecv = kvMsgRecv.getValue();
+
+            if (statusRecv == StatusType.S2A_FINISHED_FILE_TRANSFER) {
+                skipSleep = false;
+                continue;
+            }
+            
+            if (statusRecv == StatusType.S2E_SHUTDOWN_REQUEST) {
                 // After we get message that a server is shutting down
                 // 1. Remove corresponding node from hashring
                 // 2. Recalculate and update the meta-data
@@ -200,15 +273,6 @@ public class ECSClientChild implements Runnable {
                         return;
                     }
 
-                    // update successor node meta data
-                    ECSClientChild successorNodeRunnable = ptrECSClient.childObjects.get(removedNode.successor).ecsClientChild;  //to be change
-                    KVMessage successorMsgSend = new KVMessage();
-                    String mdString = convertMetaHashmapToString(ptrECSClient.getMetadata());
-
-                    successorMsgSend.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
-                    successorMsgSend.setValue(mdString);
-                    successorNodeRunnable.sendKVMessage(successorMsgSend);  // to be change
-
                     // Invoke data transfer from removed node to successor node
                     kvMsgSend = new KVMessage();
                     String successorStoreDir = ptrECSClient.getHashRing().get(removedNode.successor).getStoreDir();
@@ -224,21 +288,24 @@ public class ECSClientChild implements Runnable {
                         close();
                         return;
                     }
+
+                    try {
+                        // block until receiving response, exception when socket closed
+                        kvMsgRecv = receiveKVMessage();
+                    } catch (Exception e) {
+                        logger.error("Exception when receiving message at ECS #"
+                                + ecsClientPort+ " connected to IP: '"+ responseIP + "' \t port: "
+                                + responsePort
+                                + ".", e);
+                        close();
+                        return;
+                    }
+
+                    sendKVMessage(emptyCheck());
+                    close();
                 } else {
                     logger.error("Failed to remove server from ECS " + "IP: '"+ responseIP + "' \t port: "
                             + responsePort);
-                }
-            } else if (statusRecv == StatusType.S2E_SHUTDOWN_REQUEST) {
-                for (Map.Entry<String, ECSClient.ChildObject> entry : ptrECSClient.childObjects.entrySet()) {
-                    ECSClient.ChildObject value = entry.getValue();
-                    ECSClientChild serverNodeRunnable = value.ecsClientChild;  // to be change
-                    String mdString = convertMetaHashmapToString(ptrECSClient.getMetadata());
-
-                    KVMessage nodeMsgSend = new KVMessage();
-                    nodeMsgSend.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
-                    nodeMsgSend.setValue(mdString);
-
-                    serverNodeRunnable.sendKVMessage(nodeMsgSend);  // to be change
                 }
             }
         }
@@ -257,11 +324,11 @@ public class ECSClientChild implements Runnable {
             // LV structure: length, value
             output.writeInt(bytes_msg.length);
             output.write(bytes_msg);
-            logger.debug("#" + ecsClientPort + "-" + responsePort + ": "
+            logger.debug("ECS #" + ecsClientPort + "-" + responsePort + ": "
                     + "Sending 4(length int) " +  bytes_msg.length + " bytes.");
             output.flush();
         } catch (Exception e) {
-            logger.error("Exception when server #" + ecsClientPort + " sends to IP: '"
+            logger.error("Exception when ECS #" + ecsClientPort + " sends to IP: '"
                     + responseIP + "' \t port: " + responsePort
                     + "\n Should close socket to unblock client's receive().", e);
             return false;
@@ -278,12 +345,12 @@ public class ECSClientChild implements Runnable {
         KVMessage kvMsg = new KVMessage();
         // LV structure: length, value
         int size_bytes = input.readInt();
-        logger.debug("#" + ecsClientPort + "-" + responsePort + ": "
+        logger.debug("ECS #" + ecsClientPort + "-" + responsePort + ": "
                 + "Receiving 4(length int) + " + size_bytes + " bytes.");
         byte[] bytes = new byte[size_bytes];
         input.readFully(bytes);
         if (!kvMsg.fromBytes(bytes)) {
-            throw new Exception("#" + ecsClientPort + "-" + responsePort + ": "
+            throw new Exception("ECS #" + ecsClientPort + "-" + responsePort + ": "
                     + "Cannot convert all received bytes to KVMessage.");
         }
         kvMsg.logMessageContent();
@@ -302,17 +369,23 @@ public class ECSClientChild implements Runnable {
             return;
         }
         try {
-            logger.debug("Child of server #" + ecsClientPort + " closing response socket"
+            logger.debug("ECS #" + ecsClientPort + " closing response socket"
                     + " connected to IP: '" + responseIP + "' \t port: "
                     + responsePort + ". \nExiting very soon.");
             responseSocket.close();
             responseSocket = null;
         } catch (Exception e) {
-            logger.error("Unexpected Exception! Unable to close child socket of "
-                    + "server #" + ecsClientPort + " connected to IP: '" + responseIP
+            logger.error("Unexpected Exception! Unable to ECS"
+                    + "#" + ecsClientPort + " connected to IP: '" + responseIP
                     + "' \t port: " + responsePort + "\nExiting very soon.", e);
             // unsolvable error, thread must be shut down now
             responseSocket = null;
         }
     }
+
+    private KVMessage emptyCheck() {
+		KVMessage kvMsg = new KVMessage();
+		kvMsg.setStatus(StatusType.E2S_EMPTY_CHECK);
+		return kvMsg;
+	}
 }
