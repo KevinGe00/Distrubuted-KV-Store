@@ -93,7 +93,7 @@ public class KVServer extends Thread implements IKVServer {
 	 * @param metatdata metadata from ECS server
 	 * @return true for success, false otherwise
 	 */
-	public synchronized boolean setMetadata(String metatdata) {
+	public synchronized boolean setMetadata(String metatdata, int responsePort) {
 		if (metatdata == null) {
 			logger.error("Must not set metadata to null for server #"
 						+ getPort());
@@ -103,7 +103,7 @@ public class KVServer extends Thread implements IKVServer {
 		logger.debug("Server #" + getPort() + " has updated it keyrange"
 					+ " metadata.");
 		try {
-			updateBoundResponsible(metatdata);
+			updateBoundResponsible(metatdata, responsePort);
 			logger.debug("Server #" + getPort() + "'s new lower bound: <"
 						+ lowerBoundResponsible.toString(16)
 						+ "> \tnew upper bound: <"
@@ -151,13 +151,13 @@ public class KVServer extends Thread implements IKVServer {
      * Update lowerBoundResponsible and upperBoundResponsible with string metadata.
      * @param meta a String keyrange metadata from ECS
      */
-    public synchronized void updateBoundResponsible(String str) throws Exception {
+    public synchronized void updateBoundResponsible(String str, int responsePort) throws Exception {
         if ((str == null) || (str == "")) {
             return;
         }
 		// check if this regular metadata update or write lock keyrange update
 		String[] semicolonSeperatedStrs = str.split(";");
-		String[] commaSeperatedStrs = str.split(",");
+		String[] commaSeperatedStrs = semicolonSeperatedStrs[0].split(",");
 		if (commaSeperatedStrs.length == 5) {
 			// write lock keyrange update
 			// -> Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port
@@ -169,7 +169,9 @@ public class KVServer extends Thread implements IKVServer {
 			for (String pair : semicolonSeperatedStrs) {
 				// range_from,range_to,ip,port
 				String[] rF_rT_ip_port = pair.split(",");
-				if (Integer.parseInt(rF_rT_ip_port[3]) == getPort()) {
+				logger.info(Integer.parseInt(rF_rT_ip_port[3]));
+				logger.info(getPort());
+				if (Integer.parseInt(rF_rT_ip_port[3]) == responsePort) {
 					// find the pair for this server
 					lowerBoundResponsible = new BigInteger(rF_rT_ip_port[0], 16);
 					upperBoundResponsible = new BigInteger(rF_rT_ip_port[1], 16);

@@ -130,6 +130,7 @@ public class ECSClientChild implements Runnable {
                 // construct response
                 KVMessage kvMsgSend = new KVMessage();
                 kvMsgSend.setStatus(StatusType.E2S_INIT_RESPONSE_WITH_META);
+                kvMsgSend.setKey(Integer.toString(responsePort));
                 kvMsgSend.setValue(mdString);
 
                 if (!sendKVMessage(kvMsgSend)) {
@@ -212,6 +213,7 @@ public class ECSClientChild implements Runnable {
                 strMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata());
                 KVMessage kvMsg = new KVMessage();
                 kvMsg.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
+                kvMsg.setKey(Integer.toString(responsePort));
                 kvMsg.setValue(strMetadata);
                 if (!sendKVMessage(emptyCheck())) {
                     close();
