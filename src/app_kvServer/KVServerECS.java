@@ -129,6 +129,7 @@ public class KVServerECS implements Runnable {
 							close();
 							return;
 						}
+						continue;
 					}
 					/* server wants to shut down. */
 					shutdownProcess();
