@@ -58,19 +58,22 @@ public class KVServerECS implements Runnable {
 		}
 
 		// initialization: init request with dir
+		logger.info("Started initialization communication between server #" + serverPort
+					+ " and the ECS at IP: '" + ecsIP + "' \t port: " + ecsPort + "|ECS.");
 		KVMessage kvMsgSend = new KVMessage();
 		kvMsgSend.setStatus(StatusType.S2E_INIT_REQUEST_WITH_DIR);
-		kvMsgSend.setValue(ptrKVServer.getDirStore());
+		kvMsgSend.setKey(Integer.toString(serverPort)); 	// server's listening port, for moving files
+		kvMsgSend.setValue(ptrKVServer.getDirStore()); 		// server's store directory
 		if (!sendKVMessage(kvMsgSend, output)) {
 			close();
 			return;
 		}
 		// expect: init response with meta
+		SerStatus serStatus = null;
 		KVMessage kvMsgRecv = null;
 		StatusType statusRecv = null;
 		String keyRecv = null;
 		String valueRecv = null;
-		SerStatus serStatus = null;
 		try {
 			kvMsgRecv = receiveKVMessage(input);
 		} catch (Exception e) {
@@ -82,8 +85,8 @@ public class KVServerECS implements Runnable {
 		}
 		statusRecv = kvMsgRecv.getStatus();
 		if (statusRecv == StatusType.E2S_INIT_RESPONSE_WITH_META) {
-			keyRecv = kvMsgRecv.getKey(); // server's response socket port
-			valueRecv = kvMsgRecv.getValue();
+			keyRecv = kvMsgRecv.getKey(); 		// server's response socket port (for ECS and keyrange finding)
+			valueRecv = kvMsgRecv.getValue(); 	// keyrange metadata
 			if (!ptrKVServer.setMetadata(valueRecv, Integer.parseInt(keyRecv))) {
 				close();
 				return;
@@ -176,6 +179,8 @@ public class KVServerECS implements Runnable {
 
 	private void shutdownProcess() {
 		try {
+			logger.info("Started shutdown communication between server #" + serverPort
+						+ " and the ECS at IP: '" + ecsIP + "' \t port: " + ecsPort + "|ECS.");
 			KVMessage kvMsgSend;
 			KVMessage kvMsgRecv;
 			// 1. request ECS for shutdown
@@ -191,7 +196,7 @@ public class KVServerECS implements Runnable {
 			if (kvMsgRecv.getStatus() == StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE) {
 				;
 			} else {
-				// second try
+				// try receiving a the Write Lock again
 				kvMsgSend = emptyResponse();
 				if (!sendKVMessage(kvMsgSend, output)) {
 					ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
@@ -222,6 +227,8 @@ public class KVServerECS implements Runnable {
 			// 4. notify the server, wait for it to re-initialize its store
 			String tHostname = valueSplit[3];
 			int tPort = Integer.parseInt(valueSplit[4]);
+			logger.info("Message the KVServer at host: '" + tHostname + "' \t port: " + tPort
+						+ " to reinitialize its Store since server #" + serverPort + " is shutting down.");
 			Socket tSock = new Socket(tHostname, tPort);
 			tSock.setReuseAddress(true);
 			DataInputStream tInput = new DataInputStream(new BufferedInputStream(tSock.getInputStream()));
@@ -230,7 +237,7 @@ public class KVServerECS implements Runnable {
 			kvMsgSend.setStatus(StatusType.S2A_FINISHED_FILE_TRANSFER);
 			try {
 				sendKVMessage(kvMsgSend, tOutput);
-				receiveKVMessage(tInput); // wait for the target server to close the socket.
+				receiveKVMessage(tInput); 			// wait for the target server to close the socket.
 			} catch (Exception e) {
 				// ignore
 			} finally {
@@ -242,7 +249,7 @@ public class KVServerECS implements Runnable {
 			// 5. finally, notify ECS, wait for acknowledge, then terminate.
 			try {
 				sendKVMessage(kvMsgSend, output);
-				receiveKVMessage(input); // wait for the target server to close the socket.
+				receiveKVMessage(input); 			// wait for the ECS to close the socket.
 			} catch (Exception e) {
 				// ignore
 			}
@@ -259,6 +266,8 @@ public class KVServerECS implements Runnable {
 	void writeLockProcess(KVMessage kvMsgRecv_WL) {
 		// last must be a SEND
 		try {
+			logger.info("Started Write Lock communication between server #" + serverPort
+						+ " and the ECS at IP: '" + ecsIP + "' \t port: " + ecsPort + "|ECS.");
 			KVMessage kvMsgSend;
 			KVMessage kvMsgRecv;
 			// 1. move KV pairs to new server.
@@ -276,6 +285,8 @@ public class KVServerECS implements Runnable {
 			// 2. notify the server, wait for it to re-initialize its store
 			String tHostname = valueSplit[3];
 			int tPort = Integer.parseInt(valueSplit[4]);
+			logger.info("Message the KVServer at host: '" + tHostname + "' \t port: " + tPort
+						+ " to reinitialize its Store since server #" + serverPort + " sent files over.");
 			Socket tSock = new Socket(tHostname, tPort);
 			tSock.setReuseAddress(true);
 			DataInputStream tInput = new DataInputStream(new BufferedInputStream(tSock.getInputStream()));
@@ -284,7 +295,7 @@ public class KVServerECS implements Runnable {
 			kvMsgSend.setStatus(StatusType.S2A_FINISHED_FILE_TRANSFER);
 			try {
 				sendKVMessage(kvMsgSend, tOutput);
-				receiveKVMessage(tInput); // wait for the target server to close the socket.
+				receiveKVMessage(tInput); 			// wait for the target server to close the socket.
 			} catch (Exception e) {
 				// ignore
 			} finally {
