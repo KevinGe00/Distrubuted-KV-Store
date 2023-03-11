@@ -66,8 +66,33 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         }
     }
 
-    private boolean isBounded(BigInteger number, BigInteger lowerBound, BigInteger upperBound) {
-        return number.compareTo(lowerBound) >= 0 && number.compareTo(upperBound) <= 0;
+    private boolean isBounded(BigInteger number, BigInteger range_from, BigInteger range_to) {
+        /*
+         * Keyrange goes counterclockwise.
+         * With wrap-around:        range_to < FF (<) 0 < range_from < range_to
+         * Without wrap-around:     range_to < range_from
+         */
+        boolean bounded;
+        if (range_from.compareTo(range_to) < 0) {
+            // wrap-around
+            BigInteger minHash = new BigInteger("0");
+            BigInteger maxHash = new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+            if (number.compareTo(range_from) <= 0 && number.compareTo(minHash) >= 0) {
+                bounded = true;
+            } else if (number.compareTo(maxHash) <= 0 && number.compareTo(range_to) >= 0) {
+                bounded = true;
+            } else {
+                bounded = false;
+            }
+        } else {
+            // normal comparison
+            if (number.compareTo(range_from) <= 0 && number.compareTo(range_to) >= 0) {
+                bounded = true;
+            } else {
+                bounded = false;
+            }
+        }
+        return bounded;
     }
 
     // input is key in KV storage, return the port of the (optimistically) KVServer responsible for it
