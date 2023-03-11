@@ -197,12 +197,15 @@ public class ECSClient implements IECSClient {
      * @return true on success, otherwise false
      */
     public boolean addNewNode(String serverHost, int serverPort, String storeDir) {
+        logger.info("Attempting to add new server " + serverHost + ":" + serverPort + " to ecs.");
         try {
             String fullAddress =  serverHost + ":" + serverPort;
             BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
             updateMetadataWithNewNode(fullAddress, position);
+            logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
         } catch (Exception e) {
+            logger.error("Unsuccessfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return false;
         }
     }
@@ -214,7 +217,7 @@ public class ECSClient implements IECSClient {
      */
     public RemovedNode removeNode(String serverHost, int serverPort) {
         RemovedNode rn =  new RemovedNode();
-
+        logger.info("Attempting to remove server " + serverHost + ":" + serverPort + " from ecs.");
         try {
             String fullAddress =  serverHost + ":" + serverPort;
             String removedNodeStoreDir = removeServerNodeFromHashRing(serverHost, serverPort);
@@ -227,10 +230,11 @@ public class ECSClient implements IECSClient {
 
             successors.remove(fullAddress);
             wlPackages.remove(fullAddress);
-
+            logger.info("Successfully removed server " + serverHost + ":" + serverPort + " from ecs.");
             return rn;
         } catch (Exception e) {
             rn.success = false;
+            logger.error("Unsuccessfully removed server " + serverHost + ":" + serverPort + " from ecs.");
             return rn;
         }
     }
@@ -249,6 +253,7 @@ public class ECSClient implements IECSClient {
             // insert new node into metadata mapping
             List<BigInteger> range2 = Arrays.asList(position, BigInteger.ZERO);
             metadata.put(fullAddress, range2);
+            logger.info("Figured out hash range for " + fullAddress + " as " + range2);
 
             successors.put(fullAddress, "dummy:1000");
             successors.put("dummy:1000", fullAddress);
@@ -269,11 +274,12 @@ public class ECSClient implements IECSClient {
                     // start of key range for current entry is larger than new server's position
                     List<BigInteger> range = Arrays.asList(position, prevStart);
                     metadata.put(fullAddress, range);
-
+                    logger.info("Figured out hash range for " + fullAddress + " as " + range);
                     // cut the range of the successor node, which is the current entry
                     List<BigInteger> successorRange = entry.getValue();
                     successorRange.set(1, position);
                     metadata.put(key, successorRange);
+                    logger.info("cut the range of the successor node " + key + " to " + successorRange);
 
                     successors.put(fullAddress, key);
                     WLPackage pck = new WLPackage();
@@ -290,14 +296,13 @@ public class ECSClient implements IECSClient {
                 // new node is predecessor of dummy node at 0 since it is the one with the largest hash value
                 List<BigInteger> range = Arrays.asList(position, prevStart);
                 metadata.put(fullAddress, range);
-
-                // TODO: once we connect servers to ecs, save servers (or at least their directory) to use here
-//                moveFiles(oldServer, newServer, range)
+                logger.info("Figured out hash range for " + fullAddress + " as " + range);
 
                 // cut the range of the successor node, which is the dummy node
                 Map.Entry<String, List<BigInteger>> dummy = sortedEntries.get(0);
                 List<BigInteger> successorRange = dummy.getValue();
                 successorRange.set(1, position);
+                logger.info("cut the range of the successor node " + "dummy:1000" + " to " + successorRange);
                 metadata.put("dummy:1000", successorRange);
             };
         }
@@ -359,12 +364,12 @@ public class ECSClient implements IECSClient {
                 if (comparisonResult > 0) {
                     List<BigInteger> removedNodeRange = metadata.get(fullAddress);
                     metadata.remove(fullAddress);
-
+                    logger.info(fullAddress + " removed from metadata.");
                     // extend the range of the successor node to cover removed node range
                     List<BigInteger> successorRange = entry.getValue();
                     successorRange.set(1, nodeToRemoveRangeEnd);
                     metadata.put(key, successorRange);
-    //                moveFiles(successor, serverToRemove, Arrays.asList(nodeToRemoveRangeStart, nodeToRemoveRangeEnd))
+                    logger.info("update the range of the successor node " + key + " to " + successorRange);
                     return removedNodeRange;
                 }
             }
