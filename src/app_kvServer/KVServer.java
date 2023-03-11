@@ -51,8 +51,8 @@ public class KVServer extends Thread implements IKVServer {
 	private ServerSocket serverSocket;
 	// latest server metadata
     private String metadata;
-	private BigInteger lowerBoundResponsible;
-	private BigInteger upperBoundResponsible;
+	private BigInteger rangeFrom_responsible;
+	private BigInteger rangeTo_responsible;
 
 	/**
 	 * Initialize a new, stopped KVServer at port
@@ -69,8 +69,8 @@ public class KVServer extends Thread implements IKVServer {
 		ECSObject = null;
 		serverSocket = null;
 		metadata = null;
-		lowerBoundResponsible = null;
-		upperBoundResponsible = null;
+		rangeFrom_responsible = null;
+		rangeTo_responsible = null;
 	}
 	public KVServer(int port, int cacheSize, String strategy) {
 		status = SerStatus.STOPPED;
@@ -83,8 +83,8 @@ public class KVServer extends Thread implements IKVServer {
 		ECSObject = null;
 		serverSocket = null;
 		metadata = null;
-		lowerBoundResponsible = null;
-		upperBoundResponsible = null;
+		rangeFrom_responsible = null;
+		rangeTo_responsible = null;
 	}
 
 	/* Server metadata */
@@ -104,10 +104,10 @@ public class KVServer extends Thread implements IKVServer {
 					+ " metadata.");
 		try {
 			updateBoundResponsible(metatdata, responsePort);
-			logger.debug("Server #" + getPort() + "'s new lower bound: <"
-						+ lowerBoundResponsible.toString(16)
-						+ "> \tnew upper bound: <"
-						+ upperBoundResponsible.toString(16) + ">");
+			logger.debug("Server #" + getPort() + "'s new range_from: <"
+						+ rangeFrom_responsible.toString(16)
+						+ "> \tnew range_to: <"
+						+ rangeTo_responsible.toString(16) + ">");
 		} catch (Exception e) {
 			logger.error("Unable to update keyrange bound for server #"
 						+ getPort() + ".", e);
@@ -129,7 +129,7 @@ public class KVServer extends Thread implements IKVServer {
 	 */
 	public boolean isResponsibleToKey(String key) {
 		BigInteger hashedKey = hash(key);
-		return isBounded(hashedKey, lowerBoundResponsible, upperBoundResponsible);
+		return isBounded(hashedKey, rangeFrom_responsible, rangeTo_responsible);
 	}
 	// hash string to MD5 bigint
     private BigInteger hash(String s) {
@@ -173,7 +173,7 @@ public class KVServer extends Thread implements IKVServer {
         return bounded;
     }
 	/**
-     * Update lowerBoundResponsible and upperBoundResponsible with string metadata.
+     * Update rangeFrom_responsible and rangeTo_responsible with string metadata.
      * @param meta a String keyrange metadata from ECS
      */
     public synchronized void updateBoundResponsible(String str, int responsePort) throws Exception {
@@ -186,20 +186,18 @@ public class KVServer extends Thread implements IKVServer {
 		if (commaSeperatedStrs.length == 5) {
 			// write lock keyrange update
 			// -> Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port
-			lowerBoundResponsible = new BigInteger(commaSeperatedStrs[1], 16);
-			upperBoundResponsible = new BigInteger(commaSeperatedStrs[2], 16);
+			rangeFrom_responsible = new BigInteger(commaSeperatedStrs[1], 16);
+			rangeTo_responsible = new BigInteger(commaSeperatedStrs[2], 16);
 		} else if (commaSeperatedStrs.length == 4) {
 			// regular metadata update
 			// -> range_from,range_to,ip,port;...;range_from,range_to,ip,port
 			for (String pair : semicolonSeperatedStrs) {
 				// range_from,range_to,ip,port
 				String[] rF_rT_ip_port = pair.split(",");
-				logger.info(Integer.parseInt(rF_rT_ip_port[3]));
-				logger.info(getPort());
 				if (Integer.parseInt(rF_rT_ip_port[3]) == responsePort) {
 					// find the pair for this server
-					lowerBoundResponsible = new BigInteger(rF_rT_ip_port[0], 16);
-					upperBoundResponsible = new BigInteger(rF_rT_ip_port[1], 16);
+					rangeFrom_responsible = new BigInteger(rF_rT_ip_port[0], 16);
+					rangeTo_responsible = new BigInteger(rF_rT_ip_port[1], 16);
 					return;
 				}
 			}
@@ -831,14 +829,14 @@ public class KVServer extends Thread implements IKVServer {
 
         File[] files = srcFolder.listFiles();
 
-		BigInteger lower = range.get(0);
-        BigInteger upper = range.get(1);
+		BigInteger range_from = range.get(0);
+        BigInteger range_to = range.get(1);
         // Copy each files with range the source folder to the destination folder
         for (File file : files) {
             try {
                 BigInteger hashKey = hash(file.getName());
                 
-                if (hashKey.compareTo(lower) >= 0 && hashKey.compareTo(upper) <= 0) {
+                if (isBounded(hashKey, range_from, range_to)) {
                     Path srcPath = file.toPath();
                     Path destPath = new File(destFolder, file.getName()).toPath();
                     Files.copy(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
