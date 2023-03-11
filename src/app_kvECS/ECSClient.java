@@ -239,87 +239,88 @@ public class ECSClient implements IECSClient {
         }
     }
 
+    private boolean isBounded(BigInteger number, BigInteger range_from, BigInteger range_to) {
+        /*
+         * Keyrange goes counterclockwise.
+         * With wrap-around:        range_to < FF (<) 0 < range_from < range_to
+         * Without wrap-around:     range_to < range_from
+         */
+        boolean bounded;
+        if (range_from.compareTo(range_to) < 0) {
+            // wrap-around
+            BigInteger minHash = new BigInteger("0");
+            BigInteger maxHash = new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+            if (number.compareTo(range_from) <= 0 && number.compareTo(minHash) >= 0) {
+                bounded = true;
+            } else if (number.compareTo(maxHash) <= 0 && number.compareTo(range_to) >= 0) {
+                bounded = true;
+            } else {
+                bounded = false;
+            }
+        } else {
+            // normal comparison
+            if (number.compareTo(range_from) <= 0 && number.compareTo(range_to) >= 0) {
+                bounded = true;
+            } else {
+                bounded = false;
+            }
+        }
+        return bounded;
+    }
 
     /**
      * @param fullAddress IP:port of newly added server
      * @param position the hash of fullAddress, used to determine the position of this node on the hashring
      */
-    public void updateMetadataWithNewNode (String fullAddress, BigInteger position) {
-        if (metadata.isEmpty()) {
-            // add dummy node to handle wrap-around
-            List<BigInteger> range1 = Arrays.asList(BigInteger.ZERO, position);
-            metadata.put("dummy:1000", range1);
+    public void updateMetadataWithNewNode(String fullAddress, BigInteger position) {
+        BigInteger maxvalue = new BigInteger("ffffffffffffffffffffffffffffffff", 16);
+        List<BigInteger> newNodeRange;
 
-            // insert new node into metadata mapping
-            List<BigInteger> range2 = Arrays.asList(position, BigInteger.ZERO);
-            metadata.put(fullAddress, range2);
-            logger.info("Figured out hash range for " + fullAddress + " as " + range2);
+        for (String key : metadata.keySet()) {
+            List<BigInteger> keyrange = metadata.get(key);
+            BigInteger range_start = keyrange.get(0);
+            BigInteger range_to = keyrange.get(1);
 
-            successors.put(fullAddress, "dummy:1000");
-            successors.put("dummy:1000", fullAddress);
-
-            /* initialize WL package */
-            WLPackage pck = new WLPackage();
-            pck.needsWL = false;
-            pck.valueSend = "";
-            wlPackages.put("dummy:1000", pck);
-
-            pck = new WLPackage();
-            pck.needsWL = false;
-            pck.valueSend = "";
-            wlPackages.put(fullAddress, pck);
-
-
-        } else {
-            List<Map.Entry<String, List<BigInteger>>> sortedEntries = getSortedMetadata();
-
-            BigInteger prevStart = BigInteger.ZERO;
-            ECSNode prevNode = null;
-            boolean inserted = false;
-            // Iterate through the sorted map entries
-            for (Map.Entry<String, List<BigInteger>> entry : sortedEntries) {
-                String key = entry.getKey();
-                BigInteger rangeStart = entry.getValue().get(0);
-                int comparisonResult = rangeStart.compareTo(position);
-                if (comparisonResult > 0) {
-                    // start of key range for current entry is larger than new server's position
-                    List<BigInteger> range = Arrays.asList(position, prevStart);
-                    metadata.put(fullAddress, range);
-                    logger.info("Figured out hash range for " + fullAddress + " as " + range);
-                    // cut the range of the successor node, which is the current entry
-                    List<BigInteger> successorRange = entry.getValue();
-                    successorRange.set(1, position);
-                    metadata.put(key, successorRange);
-                    logger.info("cut the range of the successor node " + key + " to " + successorRange);
-
-                    successors.put(fullAddress, key);
-                    /* initialize WL package */
-                    WLPackage pck = new WLPackage();
-                    pck.needsWL = false;
-                    pck.valueSend = "";
-                    wlPackages.put(fullAddress, pck);
-
-                    inserted = true;
-                    break;
+            List<BigInteger> newSuccessorRange;
+            if (isBounded(position, range_start, range_to)) {
+                if (position.equals(maxvalue)) {
+                    newSuccessorRange = Arrays.asList(range_start, BigInteger.ZERO);
+                } else {
+                    newSuccessorRange = Arrays.asList(range_start, position.add(BigInteger.ONE));
                 }
-                prevStart = rangeStart;
+
+                metadata.put(key, newSuccessorRange);
+                logger.info("Cut the range of the successor node " + key + " to " + newSuccessorRange);
+
+                newNodeRange = Arrays.asList(position, range_to);
+                metadata.put(fullAddress, newNodeRange);
+                logger.info("Figured out hash range for " + fullAddress + " as " + newNodeRange);
+
+                /* initialize WL package */
+                WLPackage pck = new WLPackage();
+                pck.needsWL = false;
+                pck.valueSend = "";
+                wlPackages.put(fullAddress, pck);
+                return;
             }
-
-            if (!inserted) {
-                // new node is predecessor of dummy node at 0 since it is the one with the largest hash value
-                List<BigInteger> range = Arrays.asList(position, prevStart);
-                metadata.put(fullAddress, range);
-                logger.info("Figured out hash range for " + fullAddress + " as " + range);
-
-                // cut the range of the successor node, which is the dummy node
-                Map.Entry<String, List<BigInteger>> dummy = sortedEntries.get(0);
-                List<BigInteger> successorRange = dummy.getValue();
-                successorRange.set(1, position);
-                logger.info("cut the range of the successor node " + "dummy:1000" + " to " + successorRange);
-                metadata.put("dummy:1000", successorRange);
-            };
         }
+
+        if (position.equals(maxvalue)) {
+            newNodeRange = Arrays.asList(maxvalue, BigInteger.ZERO);
+        } else {
+            newNodeRange = Arrays.asList(position, position.add(BigInteger.ONE));
+        }
+
+        metadata.put(fullAddress, newNodeRange);
+        logger.info("Figured out hash range for " + fullAddress + " as " + newNodeRange);
+
+        /* initialize WL package */
+        WLPackage pck = new WLPackage();
+        pck.needsWL = false;
+        pck.valueSend = "";
+        wlPackages.put(fullAddress, pck);
     }
+
 
     // hash string to MD5 bigint
     private BigInteger hash(String fullAddress) {
