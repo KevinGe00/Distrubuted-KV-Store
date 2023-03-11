@@ -153,8 +153,8 @@ public class KVServer extends Thread implements IKVServer {
         boolean bounded;
         if (range_from.compareTo(range_to) < 0) {
             // wrap-around
-            BigInteger minHash = new BigInteger("0");
-            BigInteger maxHash = new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+            BigInteger minHash = new BigInteger("0", 16);
+            BigInteger maxHash = new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16);
             if (number.compareTo(range_from) <= 0 && number.compareTo(minHash) >= 0) {
                 bounded = true;
             } else if (number.compareTo(maxHash) <= 0 && number.compareTo(range_to) >= 0) {
