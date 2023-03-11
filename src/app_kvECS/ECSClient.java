@@ -258,6 +258,17 @@ public class ECSClient implements IECSClient {
             successors.put(fullAddress, "dummy:1000");
             successors.put("dummy:1000", fullAddress);
 
+            /* initialize WL package */
+            WLPackage pck = new WLPackage();
+            pck.needsWL = false;
+            pck.valueSend = "";
+            wlPackages.put("dummy:1000", pck);
+
+            pck = new WLPackage();
+            pck.needsWL = false;
+            pck.valueSend = "";
+            wlPackages.put(fullAddress, pck);
+
 
         } else {
             List<Map.Entry<String, List<BigInteger>>> sortedEntries = getSortedMetadata();
@@ -282,10 +293,12 @@ public class ECSClient implements IECSClient {
                     logger.info("cut the range of the successor node " + key + " to " + successorRange);
 
                     successors.put(fullAddress, key);
+                    /* initialize WL package */
                     WLPackage pck = new WLPackage();
                     pck.needsWL = false;
                     pck.valueSend = "";
                     wlPackages.put(fullAddress, pck);
+
                     inserted = true;
                     break;
                 }
