@@ -182,8 +182,27 @@ public class KVServerChild implements Runnable {
 					continue;
 				}
 			}
+
+			// 2. server not responsible
+			if ((statusRecv == StatusType.PUT)
+				|| (statusRecv == StatusType.GET)) {
+				if (!ptrKVServer.isResponsibleToKey(keyRecv)) {
+					KVMessage kvMsgSend = new KVMessage();
+					kvMsgSend.setValue(ptrKVServer.getMetadata());
+					/*
+					 * This server is not responsible for this key,
+					 * reply with latest metadata.
+					 */
+					kvMsgSend.setStatus(StatusType.SERVER_NOT_RESPONSIBLE);
+					if (!sendKVMessage(kvMsgSend)) {
+						close();
+						return;
+					}
+					continue;
+				}
+			}
 			
-			// 2. normal KV response to client
+			// 3. normal KV response to client
 			switch (statusRecv) {
 				case GET: {
 					KVMessage kvMsgSend = new KVMessage();
