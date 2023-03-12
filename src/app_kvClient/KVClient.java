@@ -98,14 +98,15 @@ public class KVClient implements ClientSocketListener, IKVClient  {
     // input is key in KV storage, return the port of the (optimistically) KVServer responsible for it
     private int getServerPortResponsibleForKey(String key) {
         BigInteger keyAsHash = hash(key);
-
         for (String server : metadata.keySet()) {
             List<BigInteger> value = metadata.get(server);
+            logger.info("Looking for hash of " + key + " in range: " + value);
             BigInteger currServerRangeFrom = value.get(0);
             BigInteger currServerRangeTo = value.get(1);
 
             if (isBounded(keyAsHash, currServerRangeFrom, currServerRangeTo)) {
                 int port = Integer.parseInt(server.split(":")[1]);
+                return port;
             }
         }
         logger.error("could find server port for key: " + key);
