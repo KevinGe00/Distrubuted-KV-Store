@@ -188,6 +188,7 @@ public class KVServer extends Thread implements IKVServer {
 			// -> Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port
 			rangeFrom_responsible = new BigInteger(commaSeperatedStrs[1], 16);
 			rangeTo_responsible = new BigInteger(commaSeperatedStrs[2], 16);
+			logger.info("WL keyrange update." + rangeFrom_responsible + "<->" + rangeTo_responsible);
 		} else if (commaSeperatedStrs.length == 4) {
 			// regular metadata update
 			// -> range_from,range_to,ip,port;...;range_from,range_to,ip,port
@@ -198,6 +199,7 @@ public class KVServer extends Thread implements IKVServer {
 					// find the pair for this server
 					rangeFrom_responsible = new BigInteger(rF_rT_ip_port[0], 16);
 					rangeTo_responsible = new BigInteger(rF_rT_ip_port[1], 16);
+					logger.info("metadata keyrange update " + rangeFrom_responsible + "<->" + rangeTo_responsible);
 					return;
 				}
 			}
