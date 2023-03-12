@@ -136,13 +136,14 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                             break;
                         case SERVER_STOPPED:
                             printError("Connected, but did not received Keyrange "
-                                        + "because the server is stopped.");
+                                    + "because the server is stopped.");
                             break;
-                        default: 
+                        default:
                             printError("Unexpected server response: <"
                                     + msg.getStatus().name()
                                     + ">");
                             logger.error("The KVMessage from server is invalid.");
+                    }
                 } catch(NumberFormatException nfe) {
                     printError("No valid port. Port must be a number!");
                     logger.info("Unable to parse argument <port>", nfe);

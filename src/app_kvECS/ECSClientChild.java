@@ -114,7 +114,8 @@ public class ECSClientChild implements Runnable {
             return;
         }
         statusRecv = kvMsgRecv.getStatus();
-        valueRecv = kvMsgRecv.getValue();
+        keyRecv = kvMsgRecv.getKey(); // key is server port
+        valueRecv = kvMsgRecv.getValue(); // value is dir store of the server
         if (statusRecv == StatusType.S2E_INIT_REQUEST_WITH_DIR) {
             // After a new server has established a connection with the ECS we need to
             // 1. Determines the position of the new storage server
@@ -122,15 +123,16 @@ public class ECSClientChild implements Runnable {
             // 3. Send the new storage server with the updated meta-data
             // 4. Set write lock on successor node and invoke data transfer
 
-            if (ptrECSClient.addNewNode(responseHost, responsePort, valueRecv)) {
+            if (ptrECSClient.addNewNode(responseHost, Integer.parseInt(keyRecv), valueRecv)) {
                 // Sanity check
                 String mdString = convertMetaHashmapToString(ptrECSClient.getMetadata());
+
                 logger.info("Updated ECS copy of metadata: " + mdString);
 
                 // construct response
                 KVMessage kvMsgSend = new KVMessage();
                 kvMsgSend.setStatus(StatusType.E2S_INIT_RESPONSE_WITH_META);
-                kvMsgSend.setKey(Integer.toString(responsePort));
+                kvMsgSend.setKey(keyRecv);
                 kvMsgSend.setValue(mdString);
 
                 if (!sendKVMessage(kvMsgSend)) {
@@ -147,12 +149,12 @@ public class ECSClientChild implements Runnable {
                     return;
                 }
 
-                    // deal with successor node
-                    String newNodeFullAddr = responseHost + ":" + responsePort;
-                    System.out.println(newNodeFullAddr);
+                // deal with successor node
+                String newNodeFullAddr = responseHost + ":" + keyRecv; // use server port, not response port
+                System.out.println(newNodeFullAddr);
 
-                    String successor = ptrECSClient.successors.get(newNodeFullAddr);
-                    System.out.println(successor);
+                String successor = ptrECSClient.successors.get(newNodeFullAddr);
+                System.out.println(successor);
 
 
                 // indicate the successor to send WL message
@@ -160,7 +162,7 @@ public class ECSClientChild implements Runnable {
                 KVMessage successorMsgSend = new KVMessage();
                 successorMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
                 // value in the format of: "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port"
-                String val = valueRecv + ","
+                String val = valueRecv + "," // valueRecv is dir of newly added server
                         + ptrECSClient.getMetadata().get(newNodeFullAddr).get(0)
                         + "," + ptrECSClient.getMetadata().get(newNodeFullAddr).get(1)
                         + ",localhost," + responsePort;
@@ -261,6 +263,7 @@ public class ECSClientChild implements Runnable {
 
                 if (removedNode.success) {
                     KVMessage kvMsgSend = new KVMessage();
+                    // TODO: add the value to kvMsgSend
                     kvMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
                     // set the value with the "Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port"
                     // indicating sending all of its key range to new dir
