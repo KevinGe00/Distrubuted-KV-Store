@@ -138,6 +138,11 @@ public class KVMessage implements KVMessageInterface{
 	}
 
 	public void logMessageContent() {
+		if ((status == StatusType.E2S_EMPTY_CHECK)
+			|| (status == StatusType.S2E_EMPTY_RESPONSE)){
+			// do not log empty checks and responses
+			return;
+		}
 		logger.info("<" + status.name() + "> "
 					+ "<" + key + "> "
 					+ "<" + value + ">");
