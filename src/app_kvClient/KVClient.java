@@ -127,6 +127,22 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                     serverAddress = tokens[1];
                     serverPort = Integer.parseInt(tokens[2]);
                     newConnection(serverAddress, serverPort);
+                    /* connect also update keyrange */
+                    KVMessage msg = client.getKeyrange();
+                    switch (msg.getStatus()) {
+                        case KEYRANGE_SUCCESS:
+                            String valueKVMsg = msg.getValue();
+                            updateKeyrangeMetadata(valueKVMsg);
+                            break;
+                        case SERVER_STOPPED:
+                            printError("Connected, but did not received Keyrange "
+                                        + "because the server is stopped.");
+                            break;
+                        default: 
+                            printError("Unexpected server response: <"
+                                    + msg.getStatus().name()
+                                    + ">");
+                            logger.error("The KVMessage from server is invalid.");
                 } catch(NumberFormatException nfe) {
                     printError("No valid port. Port must be a number!");
                     logger.info("Unable to parse argument <port>", nfe);
