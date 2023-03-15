@@ -296,7 +296,9 @@ public class ECSClient implements IECSClient {
                 metadata.put(fullAddress, newNodeRange);
                 logger.info("Figured out hash range for " + fullAddress + " as " + newNodeRange);
 
-                successors.put(fullAddress, key);
+                successors.put(fullAddress, successors.get(key)); // new node's successors old successor
+                successors.put(key, fullAddress);
+
                 logger.info("Successor of " + fullAddress + " is " + key);
 
                 /* initialize WL package */
@@ -317,6 +319,9 @@ public class ECSClient implements IECSClient {
 
         metadata.put(fullAddress, newNodeRange);
         logger.info("Figured out hash range for " + fullAddress + " as " + newNodeRange);
+
+        // first node is it's own successor
+        successors.put(fullAddress, fullAddress);
 
         /* initialize WL package */
         WLPackage pck = new WLPackage();
@@ -389,7 +394,10 @@ public class ECSClient implements IECSClient {
                     metadata.put(key, successorRange);
                     logger.info("update the range of the successor node " + key + " to " + successorRange);
 
+
+                    successors.put(key, successors.get(fullAddress));
                     successors.remove(fullAddress);
+
                     return removedNodeRange;
                 }
             }
