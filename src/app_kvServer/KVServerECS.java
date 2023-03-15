@@ -85,9 +85,8 @@ public class KVServerECS implements Runnable {
 		}
 		statusRecv = kvMsgRecv.getStatus();
 		if (statusRecv == StatusType.E2S_INIT_RESPONSE_WITH_META) {
-			keyRecv = kvMsgRecv.getKey(); 		// server's response socket port (for ECS and keyrange finding)
 			valueRecv = kvMsgRecv.getValue(); 	// keyrange metadata
-			if (!ptrKVServer.setMetadata(valueRecv, Integer.parseInt(keyRecv))) {
+			if (!ptrKVServer.setMetadata(valueRecv)) {
 				close();
 				return;
 			}
@@ -156,7 +155,7 @@ public class KVServerECS implements Runnable {
 				}
 				case E2S_UPDATE_META_AND_RUN: {
 					/* update metadata */
-					if (ptrKVServer.setMetadata(valueRecv, Integer.parseInt(keyRecv))) {
+					if (ptrKVServer.setMetadata(valueRecv)) {
 						ptrKVServer.setSerStatus(SerStatus.RUNNING);
 					} else {
 						close();

@@ -93,7 +93,7 @@ public class KVServer extends Thread implements IKVServer {
 	 * @param metatdata metadata from ECS server
 	 * @return true for success, false otherwise
 	 */
-	public synchronized boolean setMetadata(String metatdata, int responsePort) {
+	public synchronized boolean setMetadata(String metatdata) {
 		if (metatdata == null) {
 			logger.error("Must not set metadata to null for server #"
 						+ getPort());
@@ -103,7 +103,7 @@ public class KVServer extends Thread implements IKVServer {
 		logger.debug("Server #" + getPort() + " has updated it keyrange"
 					+ " metadata.");
 		try {
-			updateBoundResponsible(metatdata, responsePort);
+			updateBoundResponsible(metatdata, port);
 			logger.debug("Server #" + getPort() + "'s new range_from: <"
 						+ rangeFrom_responsible.toString(16)
 						+ "> \tnew range_to: <"
