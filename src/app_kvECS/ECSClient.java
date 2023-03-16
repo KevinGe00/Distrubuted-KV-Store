@@ -436,10 +436,7 @@ public class ECSClient implements IECSClient {
         Thread thread1 = new Thread(new Runnable() {
             @Override
             public void run() {
-                while (running) {
-                    stdin = new BufferedReader(new InputStreamReader(System.in));
-                    System.out.print("ECSClient started.");
-                }
+                System.out.print("ECSClient started.");
             }
         });
 
