@@ -438,15 +438,7 @@ public class ECSClient implements IECSClient {
             public void run() {
                 while (running) {
                     stdin = new BufferedReader(new InputStreamReader(System.in));
-                    System.out.print("ECSClient> ");
-
-                    try {
-                        String cmdLine = stdin.readLine();
-                        ECSClient.this.handleCommand(cmdLine);
-                    } catch (IOException e) {
-                        running = false;
-                        logger.error("ECSClient not responding, terminate application.");
-                    }
+                    System.out.print("ECSClient started.");
                 }
             }
         });
@@ -500,10 +492,6 @@ public class ECSClient implements IECSClient {
 
     }
 
-
-    public void handleCommand(String cmdLine) {
-        String[] tokens = cmdLine.split("\\s+");
-    }
 
     /**
      * Command line options
