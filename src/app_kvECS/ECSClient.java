@@ -111,6 +111,7 @@ public class ECSClient implements IECSClient {
         childObjects = new HashMap<>();
 
         successors = new HashMap<>();
+        predecessors = new HashMap<>();
 
         childMailboxs = new HashMap<>();
     }
