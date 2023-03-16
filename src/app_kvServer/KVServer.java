@@ -177,7 +177,7 @@ public class KVServer extends Thread implements IKVServer {
      * @param meta a String keyrange metadata from ECS
      */
     public synchronized void updateBoundResponsible(String str, int responsePort) throws Exception {
-        if ((str == null) || (str == "")) {
+        if ((str == null) || ("".equals(str))) {
             return;
         }
 		// check if this regular metadata update or write lock keyrange update

@@ -162,7 +162,7 @@ public class ECSClientChild implements Runnable {
         // send a WriteLock mail to successor, only if the successor is not myself
         thisFullAddress = responseIP + ":" + serverListeningPort;
         String successorFullAddress = ptrECSClient.successors.get(thisFullAddress);
-        if (thisFullAddress != successorFullAddress) {
+        if (!thisFullAddress.equals(successorFullAddress)) {
             // in case that this is the first node, do not send the mail
             Mailbox mailToSuccessor = new Mailbox();
             mailToSuccessor.needsToSendWriteLock = true;
@@ -216,8 +216,6 @@ public class ECSClientChild implements Runnable {
             } else if (!latestMetadata.equals(cacheMetadata)) {
                 // check metadata cache, if changed, send a message to update server
                 cacheMetadata = latestMetadata;
-                logger.error(cacheMetadata);
-                logger.warn(latestMetadata);
                 // set up Metadata Update message
                 kvMsgSend = new KVMessage();
                 kvMsgSend.setStatus(StatusType.E2S_UPDATE_META_AND_RUN);
@@ -288,7 +286,7 @@ public class ECSClientChild implements Runnable {
             close();
             return;
         }
-        if (thisFullAddress == successorFullAddress) {
+        if (thisFullAddress.equals(successorFullAddress)) {
             // move files to itself, can happen when it is the last node shutting down
             // quick shutdown
             kvMsgSend.setKey("" + serverListeningPort);
