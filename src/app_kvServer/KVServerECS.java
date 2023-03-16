@@ -243,6 +243,7 @@ public class KVServerECS implements Runnable {
 			DataOutputStream tOutput = new DataOutputStream(new BufferedOutputStream(tSock.getOutputStream()));
 			kvMsgSend = new KVMessage();
 			kvMsgSend.setStatus(StatusType.S2A_FINISHED_FILE_TRANSFER);
+			kvMsgSend.setKey("" + serverPort); 		// use own server port to help the receiver to distinguish
 			try {
 				sendKVMessage(kvMsgSend, tOutput);
 				receiveKVMessage(tInput); 			// wait for the target server to close the socket.
@@ -301,6 +302,7 @@ public class KVServerECS implements Runnable {
 			DataOutputStream tOutput = new DataOutputStream(new BufferedOutputStream(tSock.getOutputStream()));
 			kvMsgSend = new KVMessage();
 			kvMsgSend.setStatus(StatusType.S2A_FINISHED_FILE_TRANSFER);
+			kvMsgSend.setKey("" + serverPort); 		// use own server port to help the receiver to distinguish
 			try {
 				sendKVMessage(kvMsgSend, tOutput);
 				receiveKVMessage(tInput); 			// wait for the target server to close the socket.
@@ -343,12 +345,12 @@ public class KVServerECS implements Runnable {
 		try {
 			logger.debug("ECS child of server #" + serverPort + " closing ECS socket"
 						+ " connected to IP: '" + ecsIP + "' \t port: "
-						+ ecsPort + ". \nExiting very soon.");
+						+ ecsPort + ". This Thread is exiting very soon.");
 			ecsSocket.close();
 		} catch (Exception e) {
 			logger.error("Unexpected Exception! Unable to close ECS child socket of "
 						+ "server #" + serverPort + " connected to IP: '" + ecsIP
-						+ "' \t port: " + ecsPort + "\nExiting very soon.", e);
+						+ "' \t port: " + ecsPort + ". This thread is exiting very soon.", e);
 			// unsolvable error, thread must be shut down now
 		} finally {
 			ecsSocket = null;

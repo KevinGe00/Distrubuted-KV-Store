@@ -170,7 +170,7 @@ public class ECSClientChild implements Runnable {
             mailToSuccessor.valueSend_forWriteLock = storeDir + ","
                 + ptrECSClient.getMetadata().get(thisFullAddress).get(0) + ","
                 + ptrECSClient.getMetadata().get(thisFullAddress).get(1) + ","
-                + responseIP + serverListeningPort;
+                + responseIP + "," + serverListeningPort;
             ptrECSClient.childMailboxs.put(successorFullAddress, mailToSuccessor);
         }
 
@@ -310,7 +310,7 @@ public class ECSClientChild implements Runnable {
             successorStoreDir + ","
             + ptrECSClient.getMetadata().get(thisFullAddress).get(0) + ","
             + ptrECSClient.getMetadata().get(thisFullAddress).get(1) + ","
-            + successorIP_port[0] + successorIP_port[1];
+            + successorIP_port[0] + "," + successorIP_port[1];
         kvMsgSend.setValue(valueSend_forWriteLock);
         if (!sendKVMessage(kvMsgSend)) {
             close();
