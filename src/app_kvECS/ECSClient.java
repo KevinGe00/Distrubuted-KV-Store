@@ -57,6 +57,7 @@ public class ECSClient implements IECSClient {
     private BufferedReader stdin;
     public HashMap<String, ChildObject> childObjects;
     public HashMap<String, String> successors;
+    public HashMap<String, String> predecessors;
     public HashMap<String, Mailbox> childMailboxs;
 
     public HashMap<BigInteger, IECSNode> getHashRing() {
@@ -301,6 +302,9 @@ public class ECSClient implements IECSClient {
                 successors.put(fullAddress, successors.get(key)); // new node's successors old successor
                 successors.put(key, fullAddress);
 
+                predecessors.put(fullAddress, key);
+                predecessors.put(successors.get(fullAddress), fullAddress);
+
                 logger.info("Successor of " + fullAddress + " is " + key);
                 
                 return;
@@ -319,6 +323,7 @@ public class ECSClient implements IECSClient {
 
         // first node is it's own successor
         successors.put(fullAddress, fullAddress);
+        predecessors.put(fullAddress, fullAddress);
     }
 
 
@@ -388,6 +393,9 @@ public class ECSClient implements IECSClient {
 
                     successors.put(key, successors.get(fullAddress));
                     successors.remove(fullAddress);
+
+                    predecessors.put(successors.get(key), key);
+                    predecessors.remove(fullAddress);
 
                     return removedNodeRange;
                 }
