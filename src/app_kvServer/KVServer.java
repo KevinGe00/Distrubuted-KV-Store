@@ -886,6 +886,18 @@ public class KVServer extends Thread implements IKVServer {
 		logfilePath.setType(String.class);
 		options.addOption(logfilePath);
 
+		// Optional
+		Option strategy = new Option("s", "strategy", true, "Caching strategy\n");
+		strategy.setRequired(false);
+		strategy.setType(String.class);
+		options.addOption(strategy);
+
+		// Optional
+		Option cacheSize = new Option("c", "cacheSize", true, "Size of cache\n");
+		cacheSize.setRequired(false);
+		cacheSize.setType(String.class);
+		options.addOption(cacheSize);
+
 		Option loglevel = new Option("ll", "loglevel", true, "Loglevel, e.g., INFO, ALL, …, default set to be ALL");
 		loglevel.setRequired(false);
 		loglevel.setType(String.class);
@@ -926,6 +938,10 @@ public class KVServer extends Thread implements IKVServer {
 			server.setBootstrapServer(cmd.getOptionValue("b"));
 			// arg 5: log level
 			String logLevelString = cmd.getOptionValue("ll", "ALL");
+			// arg 6: cache strategy
+			String strategy = cmd.getOptionValue("s", "FIFO"); // unused atm
+			// arg 7: log level
+			String cacheSize = cmd.getOptionValue("c", "1"); // unused atm
 			new LogSetup(pathLog, Level.toLevel(logLevelString));
 
 			// call server.run() in its own thread
