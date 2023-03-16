@@ -111,6 +111,11 @@ public class KVServerChild implements Runnable {
 				continue;
 			} else if (statusRecv == StatusType.S2A_FINISHED_FILE_TRANSFER) {
 				/* SPECIAL CASE: this server just received KV pairs in its disk storage. */
+				if (Integer.parseInt(keyRecv) == serverPort) {
+					// sender is youself, can happen when you are the last node shutting down
+					close();
+					return;
+				}
 				SerStatus serStatus_Copy = serStatus;
 				if ((serStatus == SerStatus.RUNNING)
 					|| (serStatus == SerStatus.WRITE_LOCK)) {

@@ -22,7 +22,10 @@ public class KVMessage implements KVMessageInterface{
 	public boolean setStatus(StatusType status) {
 		try {
 			this.status = status;
-			logger.debug("Set KVMessage's Status to: <" + status.name() + ">");
+			if ((status != StatusType.E2S_EMPTY_CHECK)
+				&& (status != StatusType.S2E_EMPTY_RESPONSE)) {
+				logger.debug("Set KVMessage's Status to: <" + status.name() + ">");
+			}
 		} catch (Exception e) {
 			logger.error("Fail to set KVMessage's Status.");
 			return false;
@@ -143,7 +146,7 @@ public class KVMessage implements KVMessageInterface{
 			// do not log empty checks and responses
 			return;
 		}
-		logger.info("<" + status.name() + "> "
+		logger.debug("<" + status.name() + "> "
 					+ "<" + key + "> "
 					+ "<" + value + ">");
 	}

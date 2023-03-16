@@ -819,6 +819,9 @@ public class KVServer extends Thread implements IKVServer {
 	 * In addition, it is responsible to send the server that receives the file a notice to release Write Lock.
 	 */
     public void moveFilesTo(String dirNewStore, List<BigInteger> range) {
+		if (dirNewStore == getDirStore()) {
+			return; 	// move dir to its own dir, can happen when you are the last node shutting down
+		}
 		SerStatus serStatus = getSerStatus();
 		if (serStatus == SerStatus.RUNNING) {
 			setSerStatus(SerStatus.WRITE_LOCK);

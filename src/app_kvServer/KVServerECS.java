@@ -43,7 +43,7 @@ public class KVServerECS implements Runnable {
 	}
 	
 	/**
-	 * Run in ECS thread. For communication and processing.
+	 * Run in Server's child ECS thread. For communication and processing.
 	 */
 	public void run() {
 		try {
@@ -98,6 +98,8 @@ public class KVServerECS implements Runnable {
 			close();
 			return;
 		}
+		logger.info("Server #" + serverPort + " finished initialization process with ECS at '"
+                    + ecsIP + "' \t port: " + ecsPort + "|ECS.");
 
 		loop: while (true) {
 			// receive message from ECS. (ECS sends regular check to server.)
@@ -127,7 +129,7 @@ public class KVServerECS implements Runnable {
 					if (serStatus != SerStatus.SHUTTING_DOWN) {
 						/* if server is not shutting down, can change to running. */
 						ptrKVServer.setSerStatus(SerStatus.RUNNING);
-						if (!sendKVMessage(kvMsgSend, output)) {
+						if (!sendKVMessage(kvMsgSend, output)) { 	// empty response
 							close();
 							return;
 						}
@@ -212,9 +214,16 @@ public class KVServerECS implements Runnable {
 					return;
 				}
 			}
+			// quick shutdown (for being the last server)
+			String key = kvMsgRecv.getKey();
+			if (Integer.parseInt(key) == serverPort) {
+				ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
+				close();
+				return;
+			}
 			String value = kvMsgRecv.getValue();
 			// 3. move KV pairs to new server.
-			// value: Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port
+			// "storeDir_successor,RangeFrom_this,RangeTo_this,IP_successor,L-port_successor"
 			String[] valueSplit = value.split(",");
 			String dirNewStore = valueSplit[0];
 			BigInteger range_from = new BigInteger(valueSplit[1], 16);
@@ -303,7 +312,7 @@ public class KVServerECS implements Runnable {
 				tInput = null;
 				tOutput = null;
 			}
-			// 5. finally, notify ECS, and continue the cycle.
+			// 3. finally, notify ECS, and continue the cycle.
 			sendKVMessage(kvMsgSend, output);
 		} catch (Exception e) {
 			logger.error("Exception during write lock process in ECS child of server #"
@@ -360,8 +369,11 @@ public class KVServerECS implements Runnable {
 			// LV structure: length, value
 			output.writeInt(bytes_msg.length);
 			output.write(bytes_msg);
-			logger.debug("#" + serverPort + "-" + ecsPort + "|ECS: "
-						+ "Sending 4(length int) " +  bytes_msg.length + " bytes.");
+			if (kvMsg.getStatus() != StatusType.S2E_EMPTY_RESPONSE) {
+				// do not log empty response
+				logger.debug("#" + serverPort + "-" + ecsPort + "|ECS: "
+							+ "Sending 4(length int) " +  bytes_msg.length + " bytes.");
+			}
 			output.flush();
 		} catch (Exception e) {
 			logger.error("Exception when server #" + serverPort + " sends to IP: '"
@@ -381,13 +393,16 @@ public class KVServerECS implements Runnable {
 		KVMessage kvMsg = new KVMessage();
 		// LV structure: length, value
 		int size_bytes = input.readInt();
-		logger.debug("#" + serverPort + "-" + ecsPort + "|ECS: "
-					+ "Receiving 4(length int) + " + size_bytes + " bytes.");
 		byte[] bytes = new byte[size_bytes];
 		input.readFully(bytes);
 		if (!kvMsg.fromBytes(bytes)) {
 			throw new Exception("#" + serverPort + "-" + ecsPort + "|ECS: "
 								+ "Cannot convert all received bytes to KVMessage.");
+		}
+		if (kvMsg.getStatus() != StatusType.E2S_EMPTY_CHECK) {
+			// do not log empty check
+			logger.debug("#" + serverPort + "-" + ecsPort + "|ECS: "
+						+ "Receiving 4(length int) + " + size_bytes + " bytes.");
 		}
 		kvMsg.logMessageContent();
 		return kvMsg;

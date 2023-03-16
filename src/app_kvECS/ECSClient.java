@@ -44,9 +44,9 @@ public class ECSClient implements IECSClient {
         public String successor;
     }
 
-    public static class WLPackage {
-        public boolean needsWL;
-        public String valueSend;
+    public static class Mailbox {
+        public boolean needsToSendWriteLock;
+        public String valueSend_forWriteLock;
     }
 
     private static Logger logger = Logger.getRootLogger();
@@ -57,7 +57,7 @@ public class ECSClient implements IECSClient {
     private BufferedReader stdin;
     public HashMap<String, ChildObject> childObjects;
     public HashMap<String, String> successors;
-    public HashMap<String, WLPackage> wlPackages;
+    public HashMap<String, Mailbox> childMailboxs;
 
     public HashMap<BigInteger, IECSNode> getHashRing() {
         return hashRing;
@@ -111,7 +111,7 @@ public class ECSClient implements IECSClient {
 
         successors = new HashMap<>();
 
-        wlPackages = new HashMap<>();
+        childMailboxs = new HashMap<>();
     }
 
     /*
@@ -202,6 +202,7 @@ public class ECSClient implements IECSClient {
             String fullAddress =  serverHost + ":" + serverPort;
             BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
             updateMetadataWithNewNode(fullAddress, position);
+            putEmptyMailbox(fullAddress);
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
         } catch (Exception e) {
@@ -229,7 +230,8 @@ public class ECSClient implements IECSClient {
             rn.successor = successors.get(fullAddress);
 
             successors.remove(fullAddress);
-            wlPackages.remove(fullAddress);
+            childMailboxs.remove(fullAddress);  // remove this node's mailbox
+
             logger.info("Successfully removed server " + serverHost + ":" + serverPort + " from ecs.");
             return rn;
         } catch (Exception e) {
@@ -300,12 +302,7 @@ public class ECSClient implements IECSClient {
                 successors.put(key, fullAddress);
 
                 logger.info("Successor of " + fullAddress + " is " + key);
-
-                /* initialize WL package */
-                WLPackage pck = new WLPackage();
-                pck.needsWL = false;
-                pck.valueSend = "";
-                wlPackages.put(fullAddress, pck);
+                
                 return;
             }
         }
@@ -322,12 +319,6 @@ public class ECSClient implements IECSClient {
 
         // first node is it's own successor
         successors.put(fullAddress, fullAddress);
-
-        /* initialize WL package */
-        WLPackage pck = new WLPackage();
-        pck.needsWL = false;
-        pck.valueSend = "";
-        wlPackages.put(fullAddress, pck);
     }
 
 
@@ -418,6 +409,19 @@ public class ECSClient implements IECSClient {
         });
 
         return sortedEntries;
+    }
+
+    /**
+     * Put/Update an empty mailbox for a new/existing node
+     * @param fullAddress serverIP:L-port
+     * @return true for success, false otherwise
+     */
+    public boolean putEmptyMailbox(String fullAddress) {
+        Mailbox newMailbox = new Mailbox();
+        newMailbox.needsToSendWriteLock = false;
+        newMailbox.valueSend_forWriteLock = null;
+        childMailboxs.put(fullAddress, newMailbox);
+        return true;
     }
 
     public void run() {
