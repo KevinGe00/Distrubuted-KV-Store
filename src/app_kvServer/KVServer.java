@@ -876,11 +876,6 @@ public class KVServer extends Thread implements IKVServer {
 		address.setType(String.class);
 		options.addOption(bootstrapServer);
 
-		Option directory = new Option("d", "directory", true, "Directory for files (Put here the files you need to persist the data, the directory is created upfront and you can rely on that it exists)");
-		directory.setRequired(true);
-		directory.setType(String.class);
-		options.addOption(directory);
-
 		Option logfilePath = new Option("l", "logfilePath", true, "Relative path of the logfile, e.g., “echo.log”, default set to be current directory\n");
 		logfilePath.setRequired(false);
 		logfilePath.setType(String.class);
