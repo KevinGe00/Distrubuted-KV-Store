@@ -197,6 +197,38 @@ public class ECSClient implements IECSClient {
      * @param storeDir path to storage directory of server
      * @return true on success, otherwise false
      */
+
+    public boolean replicateNewServer(String fullAddress){
+
+        String pred = predecessors.get(fullAddress);
+
+        return false;
+    }
+
+    public static void deleteFolder(String source, String deleteFolder){
+        File folder = new File(source, deleteFolder);
+        for (File child : folder.listFiles()) {
+            if (!child.delete()) {
+                System.out.println("Failed to delete file: " + child.getAbsolutePath());
+            }
+        }
+    }
+
+    public static void copyFolder(String source, String destination){
+        File sourceFolder = new File(source);
+        File destinationFolder = new File(destination);
+        for (String child : sourceFolder.list()) {
+            File sourceChild = new File(sourceFolder, child);
+            File destinationChild = new File(destinationFolder, child);
+            try {
+                Files.copy(sourceFolder.toPath(), destinationFolder.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
     public boolean addNewNode(String serverHost, int serverPort, String storeDir) {
         logger.info("Attempting to add new server " + serverHost + ":" + serverPort + " to ecs.");
         try {
