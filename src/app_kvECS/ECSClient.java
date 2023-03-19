@@ -279,7 +279,7 @@ public class ECSClient implements IECSClient {
             BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
             updateMetadataWithNewNode(fullAddress, position);
             putEmptyMailbox(fullAddress);
-            replicateNewServer(fullAddress);
+            //replicateNewServer(fullAddress);
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
         } catch (Exception e) {
