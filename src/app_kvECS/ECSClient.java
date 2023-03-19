@@ -208,7 +208,7 @@ public class ECSClient implements IECSClient {
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
         } catch (Exception e) {
-            logger.error("Unsuccessfully added new server " + serverHost + ":" + serverPort + " to ecs.");
+            logger.error("Unsuccessfully added new server " + serverHost + ":" + serverPort + " to ecs.", e);
             return false;
         }
     }
