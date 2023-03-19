@@ -111,6 +111,7 @@ public class ECSClient implements IECSClient {
         childObjects = new HashMap<>();
 
         successors = new HashMap<>();
+        predecessors = new HashMap<>();
 
         childMailboxs = new HashMap<>();
     }
@@ -239,7 +240,7 @@ public class ECSClient implements IECSClient {
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
         } catch (Exception e) {
-            logger.error("Unsuccessfully added new server " + serverHost + ":" + serverPort + " to ecs.");
+            logger.error("Unsuccessfully added new server " + serverHost + ":" + serverPort + " to ecs.", e);
             return false;
         }
     }
@@ -468,10 +469,7 @@ public class ECSClient implements IECSClient {
         Thread thread1 = new Thread(new Runnable() {
             @Override
             public void run() {
-                while (running) {
-                    stdin = new BufferedReader(new InputStreamReader(System.in));
-                    System.out.print("ECSClient started.");
-                }
+                System.out.print("ECSClient started.");
             }
         });
 
