@@ -21,7 +21,7 @@ public class Store {
      * @param dirStore relative of where the data should be persisted
      */
     public Store(String dirStore) throws Exception {
-        this.dirStore = dirStore + File.separator + "Coordinator";
+        this.dirStore = dirStore;
         store = new HashMap<>();
         fileLocks = new HashMap<>();
 

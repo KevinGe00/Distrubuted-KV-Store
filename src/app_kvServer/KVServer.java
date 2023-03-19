@@ -926,7 +926,7 @@ public class KVServer extends Thread implements IKVServer {
 			// arg 1: hostname
 			server.setHostname(cmd.getOptionValue("a", "localhost"));
 			// arg 2: directory of disk storage
-			server.initializeStore("out/" + cmd.getOptionValue("p"));
+			server.initializeStore("out/" + cmd.getOptionValue("p") + "/Coordinator");
 			// arg 3: relative path of log file
 			String pathLog = cmd.getOptionValue("l", "logs/server.log");
 			// arg 4: Bootstrap ECS server

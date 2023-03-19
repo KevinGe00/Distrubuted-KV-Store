@@ -209,8 +209,8 @@ public class ECSClient implements IECSClient {
         String pred_port = Integer.toString(pred.getNodePort());
         String succ_dir = getParentPath(succ.getStoreDir());
         String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
-
         String curr_dir = getParentPath(curr.getStoreDir());
+        System.out.println("Predecessors and Successors acquired");
 
         deleteFolder(succ_dir, pred_port);
         deleteFolder(succ_succ_dir, pred_port);
