@@ -3,6 +3,7 @@ package app_kvECS;
 import app_kvServer.KVServer;
 import org.apache.log4j.Logger;
 
+import app_kvClient.KVClient;
 import app_kvECS.ECSClient.Mailbox;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageInterface;
@@ -13,6 +14,8 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.math.BigInteger;
 import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -168,8 +171,8 @@ public class ECSClientChild implements Runnable {
             mailToSuccessor.needsToSendWriteLock = true;
             // "storeDir_this,RangeFrom_this,RangeTo_this,IP_this,L-port_this"
             mailToSuccessor.valueSend_forWriteLock = storeDir + ","
-                + ptrECSClient.getMetadata().get(thisFullAddress).get(0) + ","
-                + ptrECSClient.getMetadata().get(thisFullAddress).get(1) + ","
+                + ptrECSClient.getMetadata().get(thisFullAddress).get(0).toString(16) + ","
+                + ptrECSClient.getMetadata().get(thisFullAddress).get(1).toString(16) + ","
                 + responseIP + "," + serverListeningPort;
             ptrECSClient.childMailboxs.put(successorFullAddress, mailToSuccessor);
         }
@@ -265,18 +268,13 @@ public class ECSClientChild implements Runnable {
     }
 
     private void shutdownProcess() {
-        // After we get message that a server is shutting down
-        // 1. Remove corresponding node from hashring
-        // 2. Recalculate and update the meta-data
-        // 3. Set the write-lock on the server that is to be removed
+        // After we get message that a server is shutting down (updated 03-15)
+        // 1. Set the write-lock on the server that is to be removed
+        // 2. Remove corresponding node from hashring
+        // 3. Recalculate and update the meta-data
         // 4. Send a meta-data update to the successor node
 
-        // 1. remove node from hashring
-        ECSClient.RemovedNode removedNode =  ptrECSClient.removeNode(responseIP, serverListeningPort);
-        if (!removedNode.success) {
-            logger.error("Failed to remove server node at IP: '"+ responseIP + "' \t L-port: "
-                        + serverListeningPort + ". Exiting very soon...");
-        }
+        // 1. Set the write-lock on the server that is to be removed
         // send Write Lock message
         KVMessage kvMsgSend = new KVMessage();
         kvMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
@@ -304,19 +302,18 @@ public class ECSClientChild implements Runnable {
             }
         }
         // "storeDir_successor,RangeFrom_this,RangeTo_this,IP_successor,L-port_successor"
-        String successorStoreDir = ptrECSClient.getNodeByKey(successorFullAddress).getStoreDir();
+        String successorStoreDir = ptrECSClient.getHashRing().get(hash(successorFullAddress)).getStoreDir();
         String[] successorIP_port = successorFullAddress.split(":");
         String valueSend_forWriteLock = 
             successorStoreDir + ","
-            + ptrECSClient.getMetadata().get(thisFullAddress).get(0) + ","
-            + ptrECSClient.getMetadata().get(thisFullAddress).get(1) + ","
+            + ptrECSClient.getMetadata().get(thisFullAddress).get(0).toString(16) + ","
+            + ptrECSClient.getMetadata().get(thisFullAddress).get(1).toString(16) + ","
             + successorIP_port[0] + "," + successorIP_port[1];
         kvMsgSend.setValue(valueSend_forWriteLock);
         if (!sendKVMessage(kvMsgSend)) {
             close();
             return;
         }
-
         try {
             // block until receiving response, exception when socket closed
             KVMessage kvMsgRecv = receiveKVMessage();
@@ -325,9 +322,31 @@ public class ECSClientChild implements Runnable {
                     + ecsPort+ " connected to IP: '"+ responseIP + "' \t port: "
                     + responsePort
                     + ".", e);
-        } finally {
-            close();
-            return;
+        }
+
+        // 2. Remove corresponding node from hashring
+        // 3. Recalculate and update the meta-data
+        // 4. Send a meta-data update to the successor node
+        ECSClient.RemovedNode removedNode =  ptrECSClient.removeNode(responseIP, serverListeningPort);
+        if (!removedNode.success) {
+            logger.error("Failed to remove server node at IP: '"+ responseIP + "' \t L-port: "
+                        + serverListeningPort + ". Exiting very soon...");
+        }
+
+        close();
+        return;
+    }
+
+    // hash string to MD5 bigint
+    public BigInteger hash(String fullAddress) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.update(fullAddress.getBytes());
+            byte[] digest = md.digest();
+            return new BigInteger(1, digest);
+        } catch (NoSuchAlgorithmException e) {
+            logger.error(e);
+            throw new RuntimeException(e);
         }
     }
 
