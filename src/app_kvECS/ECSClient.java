@@ -198,6 +198,80 @@ public class ECSClient implements IECSClient {
      * @param storeDir path to storage directory of server
      * @return true on success, otherwise false
      */
+
+    public void replicateNewServer(String fullAddress){
+        IECSNode curr = hashRing.get(fullAddress);
+        IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
+        IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
+        IECSNode pred_pred = hashRing.get(predecessors.get(predecessors.get(fullAddress)));
+        IECSNode succ_succ = hashRing.get(successors.get(successors.get(fullAddress)));
+
+        String pred_port = Integer.toString(pred.getNodePort());
+        String succ_dir = getParentPath(succ.getStoreDir());
+        String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
+        String curr_dir = getParentPath(curr.getStoreDir());
+        System.out.println("Predecessors and Successors acquired");
+
+        deleteFolder(succ_dir, pred_port);
+        deleteFolder(succ_succ_dir, pred_port);
+
+        copyFolder(pred_pred.getStoreDir(), curr_dir + File.separator + Integer.toString(pred_pred.getNodePort()));
+        copyFolder(pred.getStoreDir(), curr_dir + File.separator + Integer.toString(pred.getNodePort()));
+
+        copyFolder(pred.getStoreDir(), succ_dir + File.separator + Integer.toString(pred.getNodePort()));
+
+        copyFolder(curr.getStoreDir(), succ_dir + File.separator + Integer.toString(curr.getNodePort()));
+        copyFolder(curr.getStoreDir(), succ_succ_dir + File.separator + Integer.toString(curr.getNodePort()));
+    }
+
+    public static String getParentPath(String path) {
+        int lastIndex = path.lastIndexOf(File.separator);
+        if (lastIndex > 0) {
+            return path.substring(0, lastIndex);
+        } else {
+            return null;
+        }
+    }
+
+    public static void deleteFolder(String source, String deleteFolder){
+        File folder = new File(source, deleteFolder);
+        if (folder.exists()) {
+            for (File child : folder.listFiles()) {
+                if (!child.delete()) {
+                    System.out.println("Failed to delete file: " + child.getAbsolutePath());
+                }
+            }
+        }
+    }
+
+    public static void copyFolder(String source, String destination){
+        File sourceFolder = new File(source);
+        File destinationFolder = new File(destination);
+
+        // Do nothing if the source is itself
+        if (getParentPath(source).equals(getParentPath(destination))) {
+            return;
+        }
+
+        if (!destinationFolder.exists()) {
+            if (destinationFolder.mkdirs()) {
+                System.out.println("Directory created: " + destinationFolder);
+            } else {
+                System.out.println("Failed to create directory: " + destinationFolder);
+            }
+        }
+        for (String child : sourceFolder.list()) {
+            File sourceChild = new File(sourceFolder, child);
+            File destinationChild = new File(destinationFolder, child);
+            try {
+                Files.copy(sourceFolder.toPath(), destinationFolder.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
     public boolean addNewNode(String serverHost, int serverPort, String storeDir) {
         logger.info("Attempting to add new server " + serverHost + ":" + serverPort + " to ecs.");
         try {
@@ -205,10 +279,11 @@ public class ECSClient implements IECSClient {
             BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
             updateMetadataWithNewNode(fullAddress, position);
             putEmptyMailbox(fullAddress);
+            //replicateNewServer(fullAddress);
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
         } catch (Exception e) {
-            logger.error("Unsuccessfully added new server " + serverHost + ":" + serverPort + " to ecs.");
+            logger.error("Unsuccessfully added new server " + serverHost + ":" + serverPort + " to ecs.", e);
             return false;
         }
     }
