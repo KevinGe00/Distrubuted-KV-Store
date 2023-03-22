@@ -287,6 +287,7 @@ public class ECSClientChild implements Runnable {
         if (thisFullAddress.equals(successorFullAddress)) {
             // move files to itself, can happen when it is the last node shutting down
             // quick shutdown
+            logger.debug("The last server #" + serverListeningPort + " is shutting down.");
             kvMsgSend.setKey("" + serverListeningPort);
             if (!sendKVMessage(kvMsgSend)) {
                 close();
@@ -316,7 +317,9 @@ public class ECSClientChild implements Runnable {
         }
         try {
             // block until receiving response, exception when socket closed
+            logger.debug("Waiting for server #" + serverListeningPort + " to finish file transfer.");
             KVMessage kvMsgRecv = receiveKVMessage();
+            logger.debug("Received sever #" + serverListeningPort + " SD completion. Now update nodes and exit.")
         } catch (Exception e) {
             logger.error("Exception when receiving message at ECS #"
                     + ecsPort+ " connected to IP: '"+ responseIP + "' \t port: "
@@ -333,6 +336,7 @@ public class ECSClientChild implements Runnable {
                         + serverListeningPort + ". Exiting very soon...");
         }
 
+        logger.debug("ECS thread responsible for server #" + serverListeningPort + " is exiting.");
         close();
         return;
     }
