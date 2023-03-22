@@ -196,6 +196,7 @@ public class ECSClient implements IECSClient {
      * @param fullAddress address:port
      */
     public void replicateNewServer(String fullAddress){
+        System.out.println("REPLICATE NEW SERVER, FULLADDRESS: " + fullAddress);
         IECSNode curr = hashRing.get(hash(fullAddress));
         IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
         IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
@@ -206,7 +207,7 @@ public class ECSClient implements IECSClient {
         String succ_dir = getParentPath(succ.getStoreDir());
         String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
         String curr_dir = getParentPath(curr.getStoreDir());
-
+        System.out.println("curr STORE DIR: " + curr.getStoreDir());
         System.out.println("Successor of " + fullAddress + " is " + successors.get(fullAddress));
         System.out.println("Predecessor of " + fullAddress + " is " + predecessors.get(fullAddress));
 
@@ -238,7 +239,7 @@ public class ECSClient implements IECSClient {
         //Skip if server is deleting its non-existent replicas
         try {
             String canonicalPath = folder.getCanonicalPath();
-            String[] pathSegments = canonicalPath.split("\\\\" + File.separator);
+            String[] pathSegments = canonicalPath.split("\\" + File.separator);
             int pathLength = pathSegments.length;
             if (pathLength >= 2 && pathSegments[pathLength - 1].equals(pathSegments[pathLength - 2])) {
                 System.out.println("SKIPPING: " + source);
@@ -298,7 +299,6 @@ public class ECSClient implements IECSClient {
             BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
             updateMetadataWithNewNode(fullAddress, position);
             putEmptyMailbox(fullAddress);
-            //replicateNewServer(fullAddress);
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
         } catch (Exception e) {
