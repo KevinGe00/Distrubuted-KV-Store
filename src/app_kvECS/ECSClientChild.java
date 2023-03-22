@@ -363,7 +363,7 @@ public class ECSClientChild implements Runnable {
      */
     public boolean sendKVMessage(KVMessage kvMsg) {
         try {
-            kvMsg.logMessageContent();
+            kvMsg.logMessageContent(false);
             byte[] bytes_msg = kvMsg.toBytes();
             // LV structure: length, value
             output.writeInt(bytes_msg.length);
@@ -403,7 +403,7 @@ public class ECSClientChild implements Runnable {
             logger.debug("ECS #" + ecsPort + "-" + serverListeningPort + ": "
                 + "Receiving 4(length int) + " + size_bytes + " bytes.");
         }
-        kvMsg.logMessageContent();
+        kvMsg.logMessageContent(true);
         return kvMsg;
     }
 

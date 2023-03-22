@@ -22,12 +22,8 @@ public class KVMessage implements KVMessageInterface{
 	public boolean setStatus(StatusType status) {
 		try {
 			this.status = status;
-			if ((status != StatusType.E2S_EMPTY_CHECK)
-				&& (status != StatusType.S2E_EMPTY_RESPONSE)) {
-				logger.debug("Set KVMessage's Status to: <" + status.name() + ">");
-			}
 		} catch (Exception e) {
-			logger.error("Fail to set KVMessage's Status.");
+			logger.error("Failed to set KVMessage's Status.");
 			return false;
 		}
 		return true;
@@ -35,7 +31,7 @@ public class KVMessage implements KVMessageInterface{
 
 	public StatusType getStatus(){
 		if (status == StatusType.NOT_SET) {
-			logger.warn("Got Status <NOT_SET> from NOT_SET KVMessage.");
+			logger.error("Accessed Status from a NOT_SET KVMessage.");
 		}
 		return status;
 	}
@@ -43,13 +39,12 @@ public class KVMessage implements KVMessageInterface{
 	public boolean setKey(String key) {
 		try {
 			if ((key != null) && (key.length() > 20)) {
-				logger.error("Key for KVMessage is too long: <" + key + ">");
+				logger.error("Key: '" + key + "' for KVMessage is too long.");
 				return false;
 			}
 			this.key = key;
-			logger.debug("Set KVMessage's Key to: <" + key + ">");
 		} catch (Exception e) {
-			logger.error("Fail to set KVMessage's Key.");
+			logger.error("Failed to set KVMessage's Key.");
 			return false;
 		}
 		return true;
@@ -57,7 +52,7 @@ public class KVMessage implements KVMessageInterface{
 
 	public String getKey() {
 		if (status == StatusType.NOT_SET) {
-			logger.warn("Got Key: <" + key + "> from NOT_SET KVMessage.");
+			logger.error("Accessed Key: '" + key + "' from a NOT_SET KVMessage.");
 		}
 		return key;
 	}
@@ -65,13 +60,12 @@ public class KVMessage implements KVMessageInterface{
 	public boolean setValue(String value) {
 		try {
 			if ((value != null) && (value.length() > 120000)) {
-				logger.error("Value for KVMessage is too long: " + value.length());
+				logger.error("Value: '" + value + "' for KVMessage is too long.");
 				return false;
 			}
 			this.value = value;
-			logger.debug("Set KVMessage's Value to: <" + value + ">");
 		} catch (Exception e) {
-			logger.error("Fail to set KVMessage's Value.");
+			logger.error("Failed to set KVMessage's Value.");
 			return false;
 		}
 		return true;
@@ -79,7 +73,7 @@ public class KVMessage implements KVMessageInterface{
 
 	public String getValue() {
 		if (status == StatusType.NOT_SET) {
-			logger.warn("Got Value: <" + value + "> from NOT_SET KVMessage.");
+			logger.error("Accessed Value: '" + value + "' from a NOT_SET KVMessage.");
 		}
 		return value;
 	}
@@ -134,19 +128,26 @@ public class KVMessage implements KVMessageInterface{
 				value = new String(bytes_value, "UTF-8");
 			}
 		} catch (Exception e) {
-			logger.error("Exception during conversion from bytes to KVMessage.", e);
+			logger.error("Failed to convert bytes to a KVMessage. ", e);
 			return false;
 		}
 		return true;
 	}
 
-	public void logMessageContent() {
+	public void logMessageContent(Boolean true_for_receiving) {
 		if ((status == StatusType.E2S_EMPTY_CHECK)
 			|| (status == StatusType.S2E_EMPTY_RESPONSE)){
 			// do not log empty checks and responses
 			return;
 		}
-		logger.debug("<" + status.name() + "> "
+		String text = "";
+		if (true_for_receiving) {
+			text = ">>> Receiving ";
+		} else {
+			text = ">>> Sending ";
+		}
+		logger.debug(text
+					+ "<" + status.name() + "> "
 					+ "<" + key + "> "
 					+ "<" + value + ">");
 	}

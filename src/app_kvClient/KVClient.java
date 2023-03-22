@@ -100,7 +100,8 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         BigInteger keyAsHash = hash(key);
         for (String server : metadata.keySet()) {
             List<BigInteger> value = metadata.get(server);
-            logger.info("Looking for hash of " + key + " in range: " + value);
+            logger.info("Looking for hash of " + key + " in range: " + value.get(0).toString(16)
+                        + "<->" + value.get(1).toString(16));
             BigInteger currServerRangeFrom = value.get(0);
             BigInteger currServerRangeTo = value.get(1);
 

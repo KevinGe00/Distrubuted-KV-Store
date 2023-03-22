@@ -93,6 +93,7 @@ public interface KVMessageInterface {
 
 	/**
 	 * log this message's status, key, value (including null).
+	 * @param true_for_receiving true for receiving, false for sending.
 	 */
-	public void logMessageContent();
+	public void logMessageContent(Boolean true_for_receiving);
 }
