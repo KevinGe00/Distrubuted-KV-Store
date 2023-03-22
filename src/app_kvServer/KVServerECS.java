@@ -225,7 +225,7 @@ public class KVServerECS implements Runnable {
 			}
 			String value = kvMsgRecv.getValue();
 			// 3. move KV pairs to new server.
-			// "storeDir_successor,RangeFrom_this,RangeTo_this,IP_successor,L-port_successor"
+			// "storeDir_predecessor,RangeFrom_this,RangeTo_this,IP_predecessor,L-port_predecessor"
 			String[] valueSplit = value.split(",");
 			String dirNewStore = valueSplit[0];
 			BigInteger range_from = new BigInteger(valueSplit[1], 16);

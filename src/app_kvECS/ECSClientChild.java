@@ -112,7 +112,7 @@ public class ECSClientChild implements Runnable {
         // 1. Determines the position of the new storage server
         // 2. Recalculate and update the meta-data of the storage service
         // 3. Send the new storage server with the updated meta-data
-        // 4. Set write lock on successor node and invoke data transfer
+        // 4. Set write lock on predecessor node and invoke data transfer
 
         // expect: init request with dir
         logger.info("Started initialization communication between ECS #" + ecsPort
@@ -162,23 +162,23 @@ public class ECSClientChild implements Runnable {
             return;
         }
 
-        // send a WriteLock mail to successor, only if the successor is not myself
+        // send a WriteLock mail to predecessor, only if the predecessor is not myself
         thisFullAddress = responseIP + ":" + serverListeningPort;
-        String successorFullAddress = ptrECSClient.successors.get(thisFullAddress);
-        if (!thisFullAddress.equals(successorFullAddress)) {
+        String predecessorFullAddress = ptrECSClient.predecessors.get(thisFullAddress);
+        if (!thisFullAddress.equals(predecessorFullAddress)) {
             // in case that this is the first node, do not send the mail
-            Mailbox mailToSuccessor = new Mailbox();
-            mailToSuccessor.needsToSendWriteLock = true;
+            Mailbox mailTopredecessor = new Mailbox();
+            mailTopredecessor.needsToSendWriteLock = true;
             // "storeDir_this,RangeFrom_this,RangeTo_this,IP_this,L-port_this"
-            mailToSuccessor.valueSend_forWriteLock = storeDir + ","
+            mailTopredecessor.valueSend_forWriteLock = storeDir + ","
                 + ptrECSClient.getMetadata().get(thisFullAddress).get(0).toString(16) + ","
                 + ptrECSClient.getMetadata().get(thisFullAddress).get(1).toString(16) + ","
                 + responseIP + "," + serverListeningPort;
-            ptrECSClient.childMailboxs.put(successorFullAddress, mailToSuccessor);
+            ptrECSClient.childMailboxs.put(predecessorFullAddress, mailTopredecessor);
         }
 
         /*
-         * server received metadata, successor should be setting Write Lock
+         * server received metadata, predecessor should be setting Write Lock
          * command the server to RUN
          */ 
         kvMsgSend = new KVMessage();
@@ -272,19 +272,19 @@ public class ECSClientChild implements Runnable {
         // 1. Set the write-lock on the server that is to be removed
         // 2. Remove corresponding node from hashring
         // 3. Recalculate and update the meta-data
-        // 4. Send a meta-data update to the successor node
+        // 4. Send a meta-data update to the predecessor node
 
         // 1. Set the write-lock on the server that is to be removed
         // send Write Lock message
         KVMessage kvMsgSend = new KVMessage();
         kvMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
-        String successorFullAddress = ptrECSClient.successors.get(thisFullAddress);
-        if (successorFullAddress == null) {
-            logger.error("ECS got null for " + thisFullAddress + "'s successor. Exiting...");
+        String predecessorFullAddress = ptrECSClient.predecessors.get(thisFullAddress);
+        if (predecessorFullAddress == null) {
+            logger.error("ECS got null for " + thisFullAddress + "'s predecessor. Exiting...");
             close();
             return;
         }
-        if (thisFullAddress.equals(successorFullAddress)) {
+        if (thisFullAddress.equals(predecessorFullAddress)) {
             // move files to itself, can happen when it is the last node shutting down
             // quick shutdown
             logger.debug("The last server #" + serverListeningPort + " is shutting down.");
@@ -302,14 +302,14 @@ public class ECSClientChild implements Runnable {
                 return;
             }
         }
-        // "storeDir_successor,RangeFrom_this,RangeTo_this,IP_successor,L-port_successor"
-        String successorStoreDir = ptrECSClient.getHashRing().get(hash(successorFullAddress)).getStoreDir();
-        String[] successorIP_port = successorFullAddress.split(":");
+        // "storeDir_predecessor,RangeFrom_this,RangeTo_this,IP_predecessor,L-port_predecessor"
+        String predecessorStoreDir = ptrECSClient.getHashRing().get(hash(predecessorFullAddress)).getStoreDir();
+        String[] predecessorIP_port = predecessorFullAddress.split(":");
         String valueSend_forWriteLock = 
-            successorStoreDir + ","
+            predecessorStoreDir + ","
             + ptrECSClient.getMetadata().get(thisFullAddress).get(0).toString(16) + ","
             + ptrECSClient.getMetadata().get(thisFullAddress).get(1).toString(16) + ","
-            + successorIP_port[0] + "," + successorIP_port[1];
+            + predecessorIP_port[0] + "," + predecessorIP_port[1];
         kvMsgSend.setValue(valueSend_forWriteLock);
         if (!sendKVMessage(kvMsgSend)) {
             close();
@@ -329,7 +329,7 @@ public class ECSClientChild implements Runnable {
 
         // 2. Remove corresponding node from hashring
         // 3. Recalculate and update the meta-data
-        // 4. Send a meta-data update to the successor node
+        // 4. Send a meta-data update to the predecessor node
         ECSClient.RemovedNode removedNode =  ptrECSClient.removeNode(responseIP, serverListeningPort);
         if (!removedNode.success) {
             logger.error("Failed to remove server node at IP: '"+ responseIP + "' \t L-port: "
