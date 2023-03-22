@@ -174,7 +174,7 @@ public class KVServer extends Thread implements IKVServer {
     }
 	/**
      * Update rangeFrom_responsible and rangeTo_responsible with string metadata.
-     * @param meta a String keyrange metadata from ECS
+     * @param str a String keyrange metadata from ECS
      */
     public synchronized void updateBoundResponsible(String str, int responsePort) throws Exception {
         if ((str == null) || ("".equals(str))) {
@@ -369,7 +369,7 @@ public class KVServer extends Thread implements IKVServer {
 	}
 	/**
 	 * Single-use set ECS thread.
-	 * @param ECSSocket a new Thread where the communication module between server and ECS runs omn
+	 * @param ECSThread a new Thread where the communication module between server and ECS runs omn
 	 * @return true for success, false otherwise
 	 */
 	public boolean setECSThread(Thread ECSThread) {
@@ -926,7 +926,7 @@ public class KVServer extends Thread implements IKVServer {
 			// arg 1: hostname
 			server.setHostname(cmd.getOptionValue("a", "localhost"));
 			// arg 2: directory of disk storage
-			server.initializeStore("out/" + cmd.getOptionValue("p") + "/Coordinator");
+			server.initializeStore("out" + File.separator + cmd.getOptionValue("p") + File.separator + "Coordinator");
 			// arg 3: relative path of log file
 			String pathLog = cmd.getOptionValue("l", "logs/server.log");
 			// arg 4: Bootstrap ECS server
