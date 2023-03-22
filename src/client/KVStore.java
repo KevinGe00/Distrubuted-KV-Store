@@ -4,6 +4,7 @@ import org.apache.log4j.Logger;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
@@ -11,6 +12,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Arrays;
@@ -48,11 +51,11 @@ public class KVStore extends Thread implements KVCommInterface {
 			output = new DataOutputStream(new BufferedOutputStream(clientSocket.getOutputStream()));
 			input = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
 
-			logger.info("Connection established to: " + address + ":" + port);
+			logger.info("Connected to server #" + port);
 		} catch (UnknownHostException e) {
 			throw new UnknownHostException("Unknown host: " + address);
 		} catch (IOException e) {
-			throw new IOException("Could not establish a connection to: " + address + ":" + port);
+			throw new IOException("Cannot connect to server #" + port);
 		}
 	}
 
@@ -64,10 +67,10 @@ public class KVStore extends Thread implements KVCommInterface {
 				output.close();
 				clientSocket.close();
 				clientSocket = null;
-				logger.info("Client terminated the connection.");
+				logger.info("Disconnected from server #" + port);
 			}
 		} catch (IOException ioe) {
-			logger.error("Error! Unable to tear down connection!", ioe);
+			logger.error("Cannot disconnect from server #" + port + " ", ioe);
 		}
 	}
 
@@ -79,18 +82,16 @@ public class KVStore extends Thread implements KVCommInterface {
 	public KVMessage put(String key, String value) throws Exception {
 		KVMessage kvMsg = new KVMessage();
 		if (!kvMsg.setStatus(StatusType.PUT)) {
-			throw new Exception("PUT: cannot set KVMessage's status to PUT.");
+			throw new Exception("PUT: Cannot set KVMessage's Status to 'PUT'.");
 		}
 		if (!kvMsg.setKey(key)) {
-			throw new Exception("PUT: cannot set KVMessage's key to <"
-								+ key 
-								+ ">.");
+			throw new Exception("PUT: Cannot set KVMessage's Key to '" + key + "'.");
 		}
 		if (!kvMsg.setValue(value)) {
-			throw new Exception("PUT: cannot set KVMessage's value to <"
-								+ value
-								+ ">.");
+			throw new Exception("PUT: Cannot set KVMessage's Value to '" + value + "'.");
 		}
+		// print hash value of the key
+		logger.debug(">>> Key '" + key + "' hashes to '" + hash(key).toString(16) + "'");
 		sendKVMessage(kvMsg);
 		return receiveKVMessage();
 	}
@@ -99,16 +100,16 @@ public class KVStore extends Thread implements KVCommInterface {
 	public KVMessage get(String key) throws Exception {
 		KVMessage kvMsg = new KVMessage();
 		if (!kvMsg.setStatus(StatusType.GET)) {
-			throw new Exception("GET: cannot set KVMessage's status to GET.");
+			throw new Exception("GET: Cannot set KVMessage's Status to 'GET'.");
 		}
 		if (!kvMsg.setKey(key)) {
-			throw new Exception("GET: cannot set KVMessage's key to <"
-								+ key
-								+ ">.");
+			throw new Exception("GET: Cannot set KVMessage's Key to '" + key + "'.");
 		}
 		if (!kvMsg.setValue(null)) {
-			throw new Exception("GET: cannot set KVMessage's value to <null>.");
+			throw new Exception("GET: Cannot set KVMessage's Value to 'null'.");
 		}
+		// print hash value of the key
+		logger.debug(">>> Key '" + key + "' hashes to '" + hash(key).toString(16) + "'");
 		sendKVMessage(kvMsg);
 		return receiveKVMessage();
 	}
@@ -121,14 +122,14 @@ public class KVStore extends Thread implements KVCommInterface {
 	public KVMessage getKeyrange() throws Exception {
 		KVMessage kvMsg = new KVMessage();
 		if (!kvMsg.setStatus(StatusType.GET_KEYRANGE)) {
-			throw new Exception("GET_KEYRANGE: cannot set KVMessage's status to"
-								+ " GET_KEYRANGE.");
+			throw new Exception("GET_KEYRANGE: Cannot set KVMessage's Status to "
+								+ "'GET_KEYRANGE'.");
 		}
 		if (!kvMsg.setKey(null)) {
-			throw new Exception("GET: cannot set KVMessage's key to <null>.");
+			throw new Exception("GET_KEYRANGE: Cannot set KVMessage's Key to 'null'.");
 		}
 		if (!kvMsg.setValue(null)) {
-			throw new Exception("GET: cannot set KVMessage's value to <null>.");
+			throw new Exception("GET_KEYRANGE: Cannot set KVMessage's Value to 'null'.");
 		}
 		sendKVMessage(kvMsg);
 		return receiveKVMessage();
@@ -149,7 +150,6 @@ public class KVStore extends Thread implements KVCommInterface {
 		// LV structure: length, value
 		output.writeInt(bytes_msg.length);
 		output.write(bytes_msg);
-		logger.debug("Sending 4(length int) + " +  bytes_msg.length + " bytes to server.");
 		output.flush();
 	}
 
@@ -162,13 +162,25 @@ public class KVStore extends Thread implements KVCommInterface {
 		KVMessage kvMsg = new KVMessage();
 		// LV structure: length, value
 		int size_bytes = input.readInt();
-		logger.debug("Receiving 4(length int) + " + size_bytes + " bytes from server.");
 		byte[] bytes = new byte[size_bytes];
 		input.readFully(bytes);
 		if (!kvMsg.fromBytes(bytes)) {
-			throw new Exception("Cannot convert all received bytes to KVMessage.");
+			throw new Exception("Cannot convert all received bytes to a KVMessage.");
 		}
 		kvMsg.logMessageContent(true);
 		return kvMsg;
 	}
+
+	// hash string to MD5 bigint
+    private BigInteger hash(String key) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.update(key.getBytes());
+            byte[] digest = md.digest();
+            return new BigInteger(1, digest);
+        } catch (NoSuchAlgorithmException e) {
+            logger.error(e);
+            throw new RuntimeException(e);
+        }
+    }
 }

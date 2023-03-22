@@ -142,9 +142,9 @@ public class KVMessage implements KVMessageInterface{
 		}
 		String text = "";
 		if (true_for_receiving) {
-			text = ">>> Received ";
+			text = ">>> Receiving ";
 		} else {
-			text = ">>> Sent ";
+			text = ">>> Sending ";
 		}
 		logger.debug(text
 					+ "<" + status.name() + "> "
