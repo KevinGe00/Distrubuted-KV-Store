@@ -100,17 +100,18 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         BigInteger keyAsHash = hash(key);
         for (String server : metadata.keySet()) {
             List<BigInteger> value = metadata.get(server);
-            logger.info("Looking for hash of " + key + " in range: " + value.get(0).toString(16)
-                        + "<->" + value.get(1).toString(16));
             BigInteger currServerRangeFrom = value.get(0);
             BigInteger currServerRangeTo = value.get(1);
 
             if (isBounded(keyAsHash, currServerRangeFrom, currServerRangeTo)) {
                 int port = Integer.parseInt(server.split(":")[1]);
+                logger.debug(">>> For Key '" + key + "', the responsible server should be #" + port + ". \t "
+                            + "Server's keyrange: " + currServerRangeFrom.toString(16) + " <-> "
+                            + currServerRangeTo.toString(16));
                 return port;
             }
         }
-        logger.error("could find server port for key: " + key);
+        logger.error("Cannot find the responsible server for Key: '" + key + "'");
         return 0;
     };
 
