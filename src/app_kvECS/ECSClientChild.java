@@ -319,7 +319,7 @@ public class ECSClientChild implements Runnable {
             // block until receiving response, exception when socket closed
             logger.debug("Waiting for server #" + serverListeningPort + " to finish file transfer.");
             KVMessage kvMsgRecv = receiveKVMessage();
-            logger.debug("Received sever #" + serverListeningPort + " SD completion. Now update nodes and exit.")
+            logger.debug("Received sever #" + serverListeningPort + " SD completion. Now update nodes and exit.");
         } catch (Exception e) {
             logger.error("Exception when receiving message at ECS #"
                     + ecsPort+ " connected to IP: '"+ responseIP + "' \t port: "
