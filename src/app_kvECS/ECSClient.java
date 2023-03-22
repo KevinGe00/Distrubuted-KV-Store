@@ -193,39 +193,38 @@ public class ECSClient implements IECSClient {
     }
 
     /**
-     * @param serverHost host name of server to be added as node
-     * @param serverPort port of server to be added as node
-     * @param storeDir path to storage directory of server
-     * @return true on success, otherwise false
+     * @param fullAddress address:port
      */
-
     public void replicateNewServer(String fullAddress){
-        IECSNode curr = hashRing.get(fullAddress);
+        IECSNode curr = hashRing.get(hash(fullAddress));
         IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
         IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
-        IECSNode pred_pred = hashRing.get(predecessors.get(predecessors.get(fullAddress)));
-        IECSNode succ_succ = hashRing.get(successors.get(successors.get(fullAddress)));
+        IECSNode pred_pred = hashRing.get(hash(predecessors.get(predecessors.get(fullAddress))));
+        IECSNode succ_succ = hashRing.get(hash(successors.get(successors.get(fullAddress))));
 
         String pred_port = Integer.toString(pred.getNodePort());
         String succ_dir = getParentPath(succ.getStoreDir());
         String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
         String curr_dir = getParentPath(curr.getStoreDir());
-        System.out.println("Predecessors and Successors acquired");
 
-        deleteFolder(succ_dir, pred_port);
-        deleteFolder(succ_succ_dir, pred_port);
+        System.out.println("Successor of " + fullAddress + " is " + successors.get(fullAddress));
+        System.out.println("Predecessor of " + fullAddress + " is " + predecessors.get(fullAddress));
 
-        copyFolder(pred_pred.getStoreDir(), curr_dir + File.separator + Integer.toString(pred_pred.getNodePort()));
-        copyFolder(pred.getStoreDir(), curr_dir + File.separator + Integer.toString(pred.getNodePort()));
+        deleteFolder(succ_dir + File.separator + pred_port);
+        deleteFolder(succ_succ_dir + File.separator +  pred_port);
 
-        copyFolder(pred.getStoreDir(), succ_dir + File.separator + Integer.toString(pred.getNodePort()));
-
-        copyFolder(curr.getStoreDir(), succ_dir + File.separator + Integer.toString(curr.getNodePort()));
-        copyFolder(curr.getStoreDir(), succ_succ_dir + File.separator + Integer.toString(curr.getNodePort()));
+        copyFolder(pred_pred.getStoreDir(), curr_dir + File.separator + pred_pred.getNodePort());
+        copyFolder(pred.getStoreDir(), curr_dir + File.separator + pred.getNodePort());
+        copyFolder(pred.getStoreDir(), succ_dir + File.separator + pred.getNodePort());
+        copyFolder(curr.getStoreDir(), succ_dir + File.separator + curr.getNodePort());
+        copyFolder(curr.getStoreDir(), succ_succ_dir + File.separator + curr.getNodePort());
     }
 
+
     public static String getParentPath(String path) {
-        int lastIndex = path.lastIndexOf(File.separator);
+        int lastForwardSlashIndex = path.lastIndexOf('/');
+        int lastBackwardSlashIndex = path.lastIndexOf('\\');
+        int lastIndex = Math.max(lastForwardSlashIndex, lastBackwardSlashIndex);
         if (lastIndex > 0) {
             return path.substring(0, lastIndex);
         } else {
@@ -233,29 +232,49 @@ public class ECSClient implements IECSClient {
         }
     }
 
-    public static void deleteFolder(String source, String deleteFolder){
-        File folder = new File(source, deleteFolder);
-        if (folder.exists()) {
-            for (File child : folder.listFiles()) {
-                if (!child.delete()) {
-                    System.out.println("Failed to delete file: " + child.getAbsolutePath());
+    public static void deleteFolder(String source){
+
+        File folder = new File(source);
+        //Skip if server is deleting its non-existent replicas
+        try {
+            String canonicalPath = folder.getCanonicalPath();
+            String[] pathSegments = canonicalPath.split("\\\\" + File.separator);
+            int pathLength = pathSegments.length;
+            if (pathLength >= 2 && pathSegments[pathLength - 1].equals(pathSegments[pathLength - 2])) {
+                System.out.println("SKIPPING: " + source);
+                return;
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to obtain canonical path: " + e.getMessage());
+            return;
+        }
+
+        File[] contents = folder.listFiles();
+        if (contents != null) {
+            for (File f : contents) {
+                if (! Files.isSymbolicLink(f.toPath())) {
+                    System.out.println("DELETING CONTENTS: " + f.toPath());
+                    deleteFolder(f.getPath());
                 }
             }
         }
+        folder.delete();
+        System.out.println("DELETED: " + folder.toPath());
     }
 
     public static void copyFolder(String source, String destination){
         File sourceFolder = new File(source);
         File destinationFolder = new File(destination);
-
         // Do nothing if the source is itself
         if (getParentPath(source).equals(getParentPath(destination))) {
+            System.out.println("SAME PARENT: " + sourceFolder.toPath() + " and " + destinationFolder.toPath());
             return;
         }
+        System.out.println("COPYING FROM " + source + " TO " + destination);
 
         if (!destinationFolder.exists()) {
             if (destinationFolder.mkdirs()) {
-                System.out.println("Directory created: " + destinationFolder);
+                ;
             } else {
                 System.out.println("Failed to create directory: " + destinationFolder);
             }
@@ -264,13 +283,13 @@ public class ECSClient implements IECSClient {
             File sourceChild = new File(sourceFolder, child);
             File destinationChild = new File(destinationFolder, child);
             try {
-                Files.copy(sourceFolder.toPath(), destinationFolder.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(sourceChild.toPath(), destinationChild.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                System.out.println("Copied: " + sourceChild.toPath() + " to " + destinationChild.toPath());
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
     }
-
 
     public boolean addNewNode(String serverHost, int serverPort, String storeDir) {
         logger.info("Attempting to add new server " + serverHost + ":" + serverPort + " to ecs.");
