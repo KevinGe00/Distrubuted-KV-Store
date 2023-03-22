@@ -257,7 +257,10 @@ public class ECSClientChild implements Runnable {
                  * Expect to receive this after the server complete Write Lock.
                  * After receiving this, in next iteration, a Metadate Update should be sent
                  */
-                ptrECSClient.replicateNewServer(thisFullAddress);
+                String strPort_ServerRecvFile = keyRecv;
+                if (!strPort_ServerRecvFile.equals(serverListeningPort)) {
+                    ptrECSClient.replicateNewServer(responseIP + ":" + strPort_ServerRecvFile);
+                }
                 continue;
             }
             
