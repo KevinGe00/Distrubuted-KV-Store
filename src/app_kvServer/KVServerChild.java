@@ -410,7 +410,7 @@ public class KVServerChild implements Runnable {
 	 */
 	private boolean sendKVMessage(KVMessage kvMsg) {
 		try {
-			kvMsg.logMessageContent();
+			kvMsg.logMessageContent(false);
 			byte[] bytes_msg = kvMsg.toBytes();
 			// LV structure: length, value
 			output.writeInt(bytes_msg.length);
@@ -444,7 +444,7 @@ public class KVServerChild implements Runnable {
 			throw new Exception("#" + serverPort + "-" + responsePort + ": "
 								+ "Cannot convert all received bytes to KVMessage.");
 		}
-		kvMsg.logMessageContent();
+		kvMsg.logMessageContent(true);
 		return kvMsg;
 	}
 }

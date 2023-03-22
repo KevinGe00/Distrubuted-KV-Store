@@ -144,7 +144,7 @@ public class KVStore extends Thread implements KVCommInterface {
 	 * @throws Exception throws exception if parsing or sending bytes failed.
 	 */
 	private void sendKVMessage(KVMessage kvMsg) throws Exception {
-		kvMsg.logMessageContent();
+		kvMsg.logMessageContent(false);
 		byte[] bytes_msg = kvMsg.toBytes();
 		// LV structure: length, value
 		output.writeInt(bytes_msg.length);
@@ -168,7 +168,7 @@ public class KVStore extends Thread implements KVCommInterface {
 		if (!kvMsg.fromBytes(bytes)) {
 			throw new Exception("Cannot convert all received bytes to KVMessage.");
 		}
-		kvMsg.logMessageContent();
+		kvMsg.logMessageContent(true);
 		return kvMsg;
 	}
 }

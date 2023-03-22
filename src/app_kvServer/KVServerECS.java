@@ -368,7 +368,7 @@ public class KVServerECS implements Runnable {
 	 */
 	private boolean sendKVMessage(KVMessage kvMsg, DataOutputStream output) {
 		try {
-			kvMsg.logMessageContent();
+			kvMsg.logMessageContent(false);
 			byte[] bytes_msg = kvMsg.toBytes();
 			// LV structure: length, value
 			output.writeInt(bytes_msg.length);
@@ -408,7 +408,7 @@ public class KVServerECS implements Runnable {
 			logger.debug("#" + serverPort + "-" + ecsPort + "|ECS: "
 						+ "Receiving 4(length int) + " + size_bytes + " bytes.");
 		}
-		kvMsg.logMessageContent();
+		kvMsg.logMessageContent(true);
 		return kvMsg;
 	}
 }
