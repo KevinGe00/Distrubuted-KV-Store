@@ -217,13 +217,15 @@ public class KVServerECS implements Runnable {
 			// quick shutdown (for being the last server)
 			String key = kvMsgRecv.getKey();
 			if (Integer.parseInt(key) == serverPort) {
+				logger.debug("This server #" + serverPort + " is the last server. "
+							+ "Skipping move files and re-init contact. Closing right now...");
 				ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
 				close();
 				return;
 			}
 			String value = kvMsgRecv.getValue();
 			// 3. move KV pairs to new server.
-			// "storeDir_successor,RangeFrom_this,RangeTo_this,IP_successor,L-port_successor"
+			// "storeDir_predecessor,RangeFrom_this,RangeTo_this,IP_predecessor,L-port_predecessor"
 			String[] valueSplit = value.split(",");
 			String dirNewStore = valueSplit[0];
 			BigInteger range_from = new BigInteger(valueSplit[1], 16);

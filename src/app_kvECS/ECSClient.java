@@ -120,7 +120,7 @@ public class ECSClient implements IECSClient {
      * close the listening socket of the server.
      * should not be directly called in run().
      */
-    private void closeServerSocket() {
+    public void closeServerSocket() {
         if (serverSocket != null) {
             try {
                 serverSocket.close();

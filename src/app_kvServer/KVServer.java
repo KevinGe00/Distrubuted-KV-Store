@@ -665,9 +665,9 @@ public class KVServer extends Thread implements IKVServer {
 		logger.debug("Server #" + getPort() + " is shutting down.");
 		// for internal shutdown, SerStatus should be SHUTTING_DOWN before this.
 		setSerStatus(SerStatus.SHUTTING_DOWN);
-		joinECSThread(false);
 		closeServerSocket();
 		joinChildThreads(false);
+		joinECSThread(false);
 	}
 
 	/**
