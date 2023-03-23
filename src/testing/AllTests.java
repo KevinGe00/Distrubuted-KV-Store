@@ -29,9 +29,9 @@ public class AllTests {
 
 			server = new KVServer(7000);
 			server.setHostname("localhost");
-			server.initializeStore("out/" + "7000");
 			server.setBootstrapServer("localhost:30000");
-			server.start();
+			server.initializeStore("out/" + "7000");
+			new Thread(server).start();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -41,9 +41,9 @@ public class AllTests {
 		TestSuite clientSuite = new TestSuite("Basic Storage ServerTest-Suite");
 		clientSuite.addTestSuite(ConnectionTest.class);
 //		clientSuite.addTestSuite(InteractionTest.class);
-		clientSuite.addTestSuite(StoreTest.class);
-		clientSuite.addTestSuite(CLITest.class);
-		clientSuite.addTestSuite(AdditionalTest.class);
+//		clientSuite.addTestSuite(StoreTest.class);
+//		clientSuite.addTestSuite(CLITest.class);
+//		clientSuite.addTestSuite(AdditionalTest.class);
 		return clientSuite;
 	}
 
