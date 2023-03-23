@@ -135,6 +135,27 @@ public class KVStore extends Thread implements KVCommInterface {
 		return receiveKVMessage();
 	}
 
+	/**
+	 * Send command 'keyrange_read' to a running server for latest keyrange metadata
+	 * @return KVMessage containing the metadata, or message 'server stopped'
+	 * @throws Exception throws exception if parsing or sending bytes failed.
+	 */
+	public KVMessage getKeyrangeRead() throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		if (!kvMsg.setStatus(StatusType.GET_KEYRANGE_READ)) {
+			throw new Exception("GET_KEYRANGE_READ: Cannot set KVMessage's Status to "
+								+ "'GET_KEYRANGE_READ'.");
+		}
+		if (!kvMsg.setKey(null)) {
+			throw new Exception("GET_KEYRANGE_READ: Cannot set KVMessage's Key to 'null'.");
+		}
+		if (!kvMsg.setValue(null)) {
+			throw new Exception("GET_KEYRANGE_READ: Cannot set KVMessage's Value to 'null'.");
+		}
+		sendKVMessage(kvMsg);
+		return receiveKVMessage();
+	}
+
 	public void setRunning(boolean run) {
 		this.running = run;
 	}

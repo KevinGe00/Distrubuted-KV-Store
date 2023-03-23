@@ -105,9 +105,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
 
             if (isBounded(keyAsHash, currServerRangeFrom, currServerRangeTo)) {
                 int port = Integer.parseInt(server.split(":")[1]);
-                logger.debug(">>> For Key '" + key + "', the responsible server should be #" + port + ". \t "
-                            + "Server's keyrange: " + currServerRangeFrom.toString(16) + " <-> "
-                            + currServerRangeTo.toString(16));
+                logger.debug(">>> For Key '" + key + "', the responsible server should be #" + port + ".");
                 return port;
             }
         }
@@ -129,32 +127,15 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                     serverAddress = tokens[1];
                     serverPort = Integer.parseInt(tokens[2]);
                     newConnection(serverAddress, serverPort);
-                    /* connect also update keyrange */
-                    KVMessage msg = client.getKeyrange();
-                    switch (msg.getStatus()) {
-                        case KEYRANGE_SUCCESS:
-                            String valueKVMsg = msg.getValue();
-                            updateKeyrangeMetadata(valueKVMsg);
-                            break;
-                        case SERVER_STOPPED:
-                            printError("Connected, but did not received Keyrange "
-                                    + "because the server is stopped.");
-                            break;
-                        default:
-                            printError("Unexpected server response: <"
-                                    + msg.getStatus().name()
-                                    + ">");
-                            logger.error("The KVMessage from server is invalid.");
-                    }
                 } catch(NumberFormatException nfe) {
                     printError("No valid port. Port must be a number!");
-                    logger.info("Unable to parse argument <port>", nfe);
+                    logger.info("Unable to parse argument 'port'. ", nfe);
                 } catch (UnknownHostException e) {
                     printError("Unknown Host!");
-                    logger.info("Unknown Host!", e);
+                    logger.info("Unknown Host! ", e);
                 } catch (Exception e) {
                     printError("Could not establish connection!");
-                    logger.warn("Could not establish connection!", e);
+                    logger.warn("Could not establish connection! ", e);
                 }
             } else {
                 printError("Invalid number of parameters!");
@@ -329,6 +310,30 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 printError("'Keyrange' command failure.");
                 logger.error("Client's 'Keyrange' command failed.", e);
             }
+        } else if(tokens[0].equals("keyrange_read")) {
+            /* KEYRANGE_READ command */
+            try {
+                KVMessage msg = client.getKeyrangeRead();
+                switch (msg.getStatus()) {
+                    case KEYRANGE_READ_SUCCESS:
+                        String valueKVMsg = msg.getValue();
+                        System.out.println(PROMPT + "Keyrange Read: " + valueKVMsg);
+                        updateKeyrangeMetadata(valueKVMsg);
+                        break;
+                    case SERVER_STOPPED:
+                        printError("Server is not running, ignored 'Keyrange_Read'");
+                        break;
+                    default: 
+                        printError("Unexpected server response: <"
+                                   + msg.getStatus().name()
+                                   + ">");
+                        logger.error("The KVMessage from server is not for"
+                                    + " 'Keyrange_Read'.");
+                }
+            } catch (Exception e) {
+                printError("'Keyrange_Read' command failure.");
+                logger.error("Client's 'Keyrange_Read' command failed.", e);
+            }
         } else {
             printError("Unknown command");
             printHelp();
@@ -341,6 +346,23 @@ public class KVClient implements ClientSocketListener, IKVClient  {
         client.connect();
         client.addListener(this);
         client.start();
+        /* connect also update keyrange */
+        KVMessage msg = client.getKeyrange();
+        switch (msg.getStatus()) {
+            case KEYRANGE_SUCCESS:
+                String valueKVMsg = msg.getValue();
+                updateKeyrangeMetadata(valueKVMsg);
+                break;
+            case SERVER_STOPPED:
+                printError("Connected, but did not received Keyrange "
+                        + "because the server is stopped.");
+                break;
+            default:
+                printError("Unexpected server response: <"
+                        + msg.getStatus().name()
+                        + ">");
+                logger.error("The KVMessage from server is invalid.");
+        }
     }
 
     private void disconnect() {
