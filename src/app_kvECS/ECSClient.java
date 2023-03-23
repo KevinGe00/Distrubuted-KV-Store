@@ -204,15 +204,23 @@ public class ECSClient implements IECSClient {
         IECSNode succ_succ = hashRing.get(hash(successors.get(successors.get(fullAddress))));
 
         String pred_port = Integer.toString(pred.getNodePort());
+        String pred_pred_port = Integer.toString(pred_pred.getNodePort());
         String succ_dir = getParentPath(succ.getStoreDir());
         String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
         String curr_dir = getParentPath(curr.getStoreDir());
         System.out.println("curr STORE DIR: " + curr.getStoreDir());
         System.out.println("Successor of " + fullAddress + " is " + successors.get(fullAddress));
         System.out.println("Predecessor of " + fullAddress + " is " + predecessors.get(fullAddress));
+        logger.debug("curr STORE DIR: " + curr.getStoreDir());
+        logger.debug("Successor of " + fullAddress + " is " + successors.get(fullAddress));
+        logger.debug("Predecessor of " + fullAddress + " is " + predecessors.get(fullAddress));
 
+        logger.debug("Deleting  " + succ_dir + File.separator + pred_port);
         deleteFolder(succ_dir + File.separator + pred_port);
-        deleteFolder(succ_succ_dir + File.separator +  pred_port);
+        logger.debug("Deleting  " + succ_succ_dir + File.separator + pred_port);
+        deleteFolder(succ_succ_dir + File.separator + pred_port);
+        logger.debug("Deleting  " + succ_dir + File.separator + pred_pred_port);
+        deleteFolder(succ_dir + File.separator +  pred_pred_port);
 
         copyFolder(pred_pred.getStoreDir(), curr_dir + File.separator + pred_pred.getNodePort());
         copyFolder(pred.getStoreDir(), curr_dir + File.separator + pred.getNodePort());
@@ -242,10 +250,12 @@ public class ECSClient implements IECSClient {
             String[] pathSegments = canonicalPath.split("\\" + File.separator);
             int pathLength = pathSegments.length;
             if (pathLength >= 2 && pathSegments[pathLength - 1].equals(pathSegments[pathLength - 2])) {
+                logger.debug("Skipping Delete, same replica shouldn't exist in same server, source is: " + source);
                 System.out.println("SKIPPING: " + source);
                 return;
             }
         } catch (IOException e) {
+            logger.debug("Failed to get canonical path");
             System.err.println("Failed to obtain canonical path: " + e.getMessage());
             return;
         }
@@ -253,14 +263,21 @@ public class ECSClient implements IECSClient {
         File[] contents = folder.listFiles();
         if (contents != null) {
             for (File f : contents) {
+                logger.debug("Current file: " + f.toPath());
                 if (! Files.isSymbolicLink(f.toPath())) {
+                    logger.debug("Deleting file: " + f.toPath());
                     System.out.println("DELETING CONTENTS: " + f.toPath());
                     deleteFolder(f.getPath());
                 }
             }
         }
-        folder.delete();
-        System.out.println("DELETED: " + folder.toPath());
+        if (folder.delete()) {
+            System.out.println("DELETED: " + folder.toPath());
+            logger.debug("DELETED: " + folder.toPath());
+        }else{
+            logger.debug("DELETE FUCKED UPPPPP");
+        }
+
     }
 
     public static void copyFolder(String source, String destination){
