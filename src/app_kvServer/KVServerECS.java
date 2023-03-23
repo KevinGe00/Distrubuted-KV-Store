@@ -317,6 +317,7 @@ public class KVServerECS implements Runnable {
 				tOutput = null;
 			}
 			// 3. finally, notify ECS, and continue the cycle.
+			kvMsgSend.setKey("" + tPort);
 			sendKVMessage(kvMsgSend, output);
 		} catch (Exception e) {
 			logger.error("Exception during write lock process in ECS child of server #"

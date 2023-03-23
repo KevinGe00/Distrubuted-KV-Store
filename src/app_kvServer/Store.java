@@ -59,7 +59,11 @@ public class Store {
             while ((line = br.readLine()) != null) {
                 contents.append(line).append("\n");
             }
-            return contents.toString();
+            String result = contents.toString();
+            if (!result.equals("")) {
+                result = result.substring(0, result.length()-1);
+            }
+            return result;
         } catch (IOException e) {
             String errMsg = "Error while reading contents of " + file.getAbsolutePath();
             System.err.println(errMsg);
