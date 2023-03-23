@@ -225,8 +225,13 @@ public class ECSClient implements IECSClient {
         // 4. Copy DN's pred pred as a replica in DN's succ
         copyFolder(pred_pred_dir, succ_dir + File.separator + pred_pred.getNodePort());
 
-        // 4. Copy DN's pred as a replica in DN's succ succ
+        // 5. Copy DN's pred as a replica in DN's succ succ
         copyFolder(pred_dir, succ_succ_dir + File.separator + pred.getNodePort());
+
+        // 6. Finally, delete the entire folder of DN
+        IECSNode curr = hashRing.get(hash(fullAddress));
+        String curr_dir = getParentPath(curr.getStoreDir());
+        deleteFolder(curr_dir);
     }
 
     /**
@@ -354,7 +359,7 @@ public class ECSClient implements IECSClient {
         logger.info("Attempting to remove server " + serverHost + ":" + serverPort + " from ecs.");
         try {
             String fullAddress =  serverHost + ":" + serverPort;
-            // needs to happen before successors and predecessor maps are updated
+            // needs to happen before hashring, successors and predecessor maps are updated
             handleReplicaChangesAfterNodeRemoval(serverHost, serverPort);
 
             String removedNodeStoreDir = removeServerNodeFromHashRing(serverHost, serverPort);
@@ -367,8 +372,6 @@ public class ECSClient implements IECSClient {
 
             successors.remove(fullAddress);
             childMailboxs.remove(fullAddress);  // remove this node's mailbox
-
-
 
             logger.info("Successfully removed server " + serverHost + ":" + serverPort + " from ecs.");
             return rn;
