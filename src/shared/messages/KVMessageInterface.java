@@ -17,8 +17,10 @@ public interface KVMessageInterface {
 		SERVER_WRITE_LOCK, 		/* Server locked writing, only get available */
 		SERVER_NOT_RESPONSIBLE,	/* Request failed as this server is not responsible for this key */
 		KEYRANGE_SUCCESS,		/* semi-colon seperated <hex_start,hex_end,IP:port> pairs */
+		KEYRANGE_READ_SUCCESS, 	/* semi-colon seperated <hex_start,hex_end,IP:port> pairs */
 		
 		GET_KEYRANGE,		/* client -> server: request for latest Keyrange metadata */
+		GET_KEYRANGE_READ, 	/* client -> server: request for latest Keyrange metadata (full) */
 
 		NOT_SET,			/* Custom: placeholder for new KVMessage */
 

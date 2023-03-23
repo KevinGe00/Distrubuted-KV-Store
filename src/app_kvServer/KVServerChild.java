@@ -109,6 +109,33 @@ public class KVServerChild implements Runnable {
 					return;
 				}
 				continue;
+			} else if (statusRecv == StatusType.GET_KEYRANGE_READ) {
+				/* KEYRANGE_READ command */
+				if ((serStatus == SerStatus.STOPPED) || (serStatus == SerStatus.SHUTTING_DOWN)) {
+					KVMessage kvMsgSend = new KVMessage();
+					/*
+					 * Client commands 'keyrange', but server is stopped or shutting down,
+					 * reply with 'server stopped', as specified in the module
+					 */
+					kvMsgSend.setStatus(StatusType.SERVER_STOPPED);
+					if (!sendKVMessage(kvMsgSend)) {
+						close();
+						return;
+					}
+					continue;
+				}
+				KVMessage kvMsgSend = new KVMessage();
+				kvMsgSend.setValue(ptrKVServer.getMetadata());
+				/*
+				 * Client commands 'keyrange', server is not stopped or shutting down,
+				 * reply with 'keyrange success' and latest server metadata
+				 */
+				kvMsgSend.setStatus(StatusType.KEYRANGE_SUCCESS);
+				if (!sendKVMessage(kvMsgSend)) {
+					close();
+					return;
+				}
+				continue;
 			} else if (statusRecv == StatusType.S2A_FINISHED_FILE_TRANSFER) {
 				/* SPECIAL CASE: this server just received KV pairs in its disk storage. */
 				if (Integer.parseInt(keyRecv) == serverPort) {
