@@ -130,7 +130,7 @@ public class KVServerChild implements Runnable {
 				 * Client commands 'keyrange', server is not stopped or shutting down,
 				 * reply with 'keyrange success' and latest server metadata
 				 */
-				kvMsgSend.setStatus(StatusType.KEYRANGE_SUCCESS);
+				kvMsgSend.setStatus(StatusType.KEYRANGE_READ_SUCCESS);
 				if (!sendKVMessage(kvMsgSend)) {
 					close();
 					return;

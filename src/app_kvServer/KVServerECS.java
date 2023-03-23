@@ -216,7 +216,7 @@ public class KVServerECS implements Runnable {
 			}
 			// quick shutdown (for being the last server)
 			String key = kvMsgRecv.getKey();
-			if (Integer.parseInt(key) == serverPort) {
+			if ((key != null) && (Integer.parseInt(key) == serverPort)) {
 				logger.debug("This server #" + serverPort + " is the last server. "
 							+ "Skipping move files and re-init contact. Closing right now...");
 				ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
