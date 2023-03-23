@@ -193,6 +193,43 @@ public class ECSClient implements IECSClient {
     }
 
     /**
+     * @param serverHost host of node being deleted
+     * @param serverPort port of node being deleted
+     */
+    public void handleReplicaChangesAfterNodeRemoval(String serverHost, int serverPort) {
+        // DN = node being deleted
+        // At this point, DN's data has already been moved to coord folder of DN's pred
+        // Happens in writeLockProcess of KVServerECS
+
+        String fullAddress = serverHost + ":" + serverPort;
+        IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
+        IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
+        IECSNode pred_pred = hashRing.get(hash(predecessors.get(predecessors.get(fullAddress))));
+        IECSNode succ_succ = hashRing.get(hash(successors.get(successors.get(fullAddress))));
+
+        String succ_dir = getParentPath(succ.getStoreDir());
+        String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
+        String pred_dir = pred.getStoreDir();
+        String pred_pred_dir = pred_pred.getStoreDir();
+
+
+        // 1. Copy DN's succ's replica of DN's data into DN's succ's replica of DN's pred
+        copyFolder(succ_dir + File.separator + serverPort, succ_dir + File.separator + pred.getNodePort());
+
+        // 2. Delete DN's succ's replica of DN
+        deleteFolder(succ_dir + File.separator + serverPort);
+
+        // 3. Delete DN's succ's succ's replica of DN
+        deleteFolder(succ_succ_dir + File.separator + serverPort);
+
+        // 4. Copy DN's pred pred as a replica in DN's succ
+        copyFolder(pred_pred_dir, succ_dir + File.separator + pred_pred.getNodePort());
+
+        // 4. Copy DN's pred as a replica in DN's succ succ
+        copyFolder(pred_dir, succ_succ_dir + File.separator + pred.getNodePort());
+    }
+
+    /**
      * @param fullAddress address:port
      */
     public void replicateNewServer(String fullAddress){
@@ -334,6 +371,9 @@ public class ECSClient implements IECSClient {
         logger.info("Attempting to remove server " + serverHost + ":" + serverPort + " from ecs.");
         try {
             String fullAddress =  serverHost + ":" + serverPort;
+            // needs to happen before successors and predecessor maps are updated
+            handleReplicaChangesAfterNodeRemoval(serverHost, serverPort);
+
             String removedNodeStoreDir = removeServerNodeFromHashRing(serverHost, serverPort);
             List<BigInteger> removedNodeRange = updateMetadataAfterNodeRemoval(fullAddress);
 
@@ -344,6 +384,8 @@ public class ECSClient implements IECSClient {
 
             successors.remove(fullAddress);
             childMailboxs.remove(fullAddress);  // remove this node's mailbox
+
+
 
             logger.info("Successfully removed server " + serverHost + ":" + serverPort + " from ecs.");
             return rn;
