@@ -284,7 +284,7 @@ public class KVServer extends Thread implements IKVServer {
 		}
 		try {
 			setDirStore(dirStore);
-			store = new Store(dirStore);
+			store = new Store(port, port, dirStore);
 		} catch (Exception e) {
 			logger.error("Exception when initializing server #" + getPort()
 						+ " disk storage.", e);
@@ -295,7 +295,7 @@ public class KVServer extends Thread implements IKVServer {
 	}
 	public boolean reInitializeStore() {
 		try {
-			store = new Store(dirStore);
+			store = new Store(port, port, dirStore);
 		} catch (Exception e) {
 			logger.error("Exception when re-initializing server #" + getPort()
 						+ " disk storage.", e);

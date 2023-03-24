@@ -37,8 +37,11 @@ public interface KVMessageInterface {
 		E2S_WRITE_LOCK_WITH_KEYRANGE, 		/* ECS -> Server:  after receiving S2E_REQUEST_SHUTDOWN or accepting a new connection, ECS does not need to sleep, and will send this message to the corresponding server with Value being a single String: "Directory_Receiver,NewBigInt_from,NewBigInt_to,receiver_IP,receiver_port" */
 		S2A_FINISHED_FILE_TRANSFER, 		/* Server -> ECS:  after receiving E2S_WRITE_LOCK_WITH_KEYRANGE, the server will send this message (no key, no value) to ECS after it finishes file transfer, write lock is not removed yet. For shutting-down server, this will be the last message. */
 											/* Server Sending -> Server Receiving: send this to the server it is transferring files to after it finishes */
-		E2S_UPDATE_META_AND_RUN 			/* ECS -> Server:  after receiving S2E_FINISHED_FILE_TRANSFER, the server does not need to sleep, and will send this message (value being metadata) to the server to update its keyrange metadata and remove its write lock. */
+		E2S_UPDATE_META_AND_RUN, 			/* ECS -> Server:  after receiving S2E_FINISHED_FILE_TRANSFER, the server does not need to sleep, and will send this message (value being metadata) to the server to update its keyrange metadata and remove its write lock. */
 											/*                 this message can also be sent to a server when a new server connection is accepted to update its keyrange metadata. */
+		
+		// milestone 3 extension
+		S2S_SERVER_PUT 						/* Server Coordinator -> Server Replica: after a client's PUT, the coordinator server will contact key's replica server(s) for the new KV pair. */
 	}
 
 	// set and get methods for Status

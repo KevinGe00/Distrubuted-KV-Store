@@ -28,7 +28,7 @@ public class StoreTest extends TestCase {
 		File folder = new File(dirPath);
 		assertFalse(folder.exists());
 
-		new Store("test");
+		new Store(0, 0, "test");
 		assertTrue(folder.exists() && folder.isDirectory());
 
 		deleteTestDir();
@@ -36,7 +36,7 @@ public class StoreTest extends TestCase {
 
 	public void testPutAndPersistence() throws Exception {
 		String dirPath = "test";
-		Store store = new Store("test");
+		Store store = new Store(0, 0, "test");
 		File folder = new File(dirPath);
 
 		store.put("name", "john");
@@ -58,7 +58,7 @@ public class StoreTest extends TestCase {
 
 	public void testClearStorage() throws Exception {
 		String dirPath = "test";
-		Store store = new Store("test");
+		Store store = new Store(0, 0, "test");
 		File folder = new File(dirPath);
 
 		store.put("name", "john");
@@ -75,7 +75,7 @@ public class StoreTest extends TestCase {
 
 	public void testGetFromStorage() throws Exception {
 		String dirPath = "test";
-		Store store = new Store(dirPath);
+		Store store = new Store(0, 0, dirPath);
 
 		store.put("name", "john");
 
