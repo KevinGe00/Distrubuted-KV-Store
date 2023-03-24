@@ -209,7 +209,7 @@ public class KVServer extends Thread implements IKVServer {
 
 	/* Server status enum */
 	@Override
-	public synchronized boolean setSerStatus(SerStatus status) {
+	public boolean setSerStatus(SerStatus status) {
 		if (this.status != status) {
 			logger.debug(">>> Set #" + getPort() + " to " + status.name());
 			this.status = status;
@@ -495,7 +495,7 @@ public class KVServer extends Thread implements IKVServer {
 				// server listening socket is closed by others while in accept()
 				logger.error("Server #" + getPort() + "'s listening socket was closed"
 							+ " during accept(). "
-							+ "Not an error if caused by manual interrupt", ioe);
+							+ "Not an error if caused by manual interrupt.");
 				close();
 				break loop;
 			} catch (Exception e) {
@@ -667,6 +667,7 @@ public class KVServer extends Thread implements IKVServer {
 		joinChildThreads(false);
 		closeServerSocket();
 		joinECSThread(false);
+		logger.debug("Server close() complete.");
 	}
 
 	/**
@@ -818,9 +819,6 @@ public class KVServer extends Thread implements IKVServer {
 	 * In addition, it is responsible to send the server that receives the file a notice to release Write Lock.
 	 */
     public void moveFilesTo(String dirNewStore, List<BigInteger> range) {
-		if (dirNewStore == getDirStore()) {
-			return; 	// move dir to its own dir, can happen when you are the last node shutting down
-		}
 		SerStatus serStatus = getSerStatus();
 		if (serStatus == SerStatus.RUNNING) {
 			setSerStatus(SerStatus.WRITE_LOCK);
@@ -843,14 +841,14 @@ public class KVServer extends Thread implements IKVServer {
                 if (isBounded(hashKey, range_from, range_to)) {
                     Path srcPath = file.toPath();
                     Path destPath = new File(destFolder, file.getName()).toPath();
+					logger.debug("Moving file " + file.getName() + " to " + destFolder.getAbsolutePath());
                     Files.copy(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
 					file.delete();
-                    logger.debug("Server #" + getPort() + " moved file "
-								+ file.getName() + " to " + destFolder.getAbsolutePath());
+					logger.debug("Finished deleting.");
                 }
             } catch (IOException e) {
                 logger.error("Server #" + getPort() + " failed to move file " + file.getName()
-							+ " due to " + e.getMessage());
+							+ " due to " + e.getClass().getName());
             }
         }
 		setSerStatus(serStatus);

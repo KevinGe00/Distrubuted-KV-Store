@@ -180,11 +180,10 @@ public class KVServerECS implements Runnable {
 
 	private void shutdownProcess() {
 		try {
-			logger.info("Started shutdown communication between server #" + serverPort
-						+ " and the ECS at IP: '" + ecsIP + "' \t port: " + ecsPort + "|ECS.");
 			KVMessage kvMsgSend;
 			KVMessage kvMsgRecv;
 			// 1. request ECS for shutdown
+			logger.debug("[To ECS] >>> Requesting shutdown...");
 			kvMsgSend = new KVMessage();
 			kvMsgSend.setStatus(StatusType.S2E_SHUTDOWN_REQUEST);
 			if (!sendKVMessage(kvMsgSend, output)) {
@@ -198,8 +197,10 @@ public class KVServerECS implements Runnable {
 				;
 			} else {
 				// try receiving a the Write Lock again
+				logger.debug("[To ECS] >>> Try receiving the shutdown WRITE LOCK again.");
 				kvMsgSend = emptyResponse();
 				if (!sendKVMessage(kvMsgSend, output)) {
+					logger.error("[To ECS] >>> Failed to receive shutdown WRITE LOCK. Terminating server.");
 					ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
 					close();
 					return;
@@ -208,21 +209,22 @@ public class KVServerECS implements Runnable {
 				if (kvMsgRecv.getStatus() == StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE) {
 					;
 				} else {
-					logger.error("ECS did not respond to server #" + serverPort + "'s "
-								+ "Shutdown request. Exiting.");
+					logger.error("[To ECS] >>> Did not receive shutdown WRITE LOCK. Terminating server.");
 					close();
 					return;
 				}
 			}
-			// quick shutdown (for being the last server)
+			// Special Case: last server is shutting down
+			logger.debug("[To ECS] >>> Received the shutdown WRITE LOCK.");
 			String key = kvMsgRecv.getKey();
 			if ((key != null) && (Integer.parseInt(key) == serverPort)) {
-				logger.debug("This server #" + serverPort + " is the last server. "
-							+ "Skipping move files and re-init contact. Closing right now...");
 				ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
+				logger.debug("[To ECS] >>> I am the last server, shutting down. Exiting without "
+							+ "the need for file transfer.");
 				close();
 				return;
 			}
+			// General Case: need to transfer files
 			String value = kvMsgRecv.getValue();
 			// 3. move KV pairs to new server.
 			// "storeDir_predecessor,RangeFrom_this,RangeTo_this,IP_predecessor,L-port_predecessor"
@@ -233,24 +235,31 @@ public class KVServerECS implements Runnable {
 			List<BigInteger> range = new ArrayList<>();
 			range.add(0, range_from);
 			range.add(1, range_to);
+			logger.debug("[To ECS] >>> Moving KV pairs to predecessor...");
 			ptrKVServer.moveFilesTo(dirNewStore, range);
+			logger.debug("[To ECS] >>> Finished Moving KV pairs, contacting predecessor to reinitialize Store.");
+
 			// 4. notify the server, wait for it to re-initialize its store
 			String tHostname = valueSplit[3];
 			int tPort = Integer.parseInt(valueSplit[4]);
-			logger.info("Message the KVServer at host: '" + tHostname + "' \t port: " + tPort
-						+ " to reinitialize its Store since server #" + serverPort + " is shutting down.");
 			Socket tSock = new Socket(tHostname, tPort);
 			tSock.setReuseAddress(true);
 			DataInputStream tInput = new DataInputStream(new BufferedInputStream(tSock.getInputStream()));
 			DataOutputStream tOutput = new DataOutputStream(new BufferedOutputStream(tSock.getOutputStream()));
 			kvMsgSend = new KVMessage();
 			kvMsgSend.setStatus(StatusType.S2A_FINISHED_FILE_TRANSFER);
-			kvMsgSend.setKey("" + serverPort); 		// use own server port to help the receiver to distinguish
+			kvMsgSend.setKey("" + serverPort); 		// provide its listening port to the predecessor
 			try {
-				sendKVMessage(kvMsgSend, tOutput);
-				receiveKVMessage(tInput); 			// wait for the target server to close the socket.
+				if (!sendKVMessage(kvMsgSend, tOutput)) {
+					logger.error("[To ECS] >>> Cannot contact predecessor server. Terminating server.");
+					close();
+					return;
+				}
+				receiveKVMessage(tInput); 			// expect predecessor to reply before closing
 			} catch (Exception e) {
-				// ignore
+				logger.error("[To ECS] >>> Exception when communicating with predecessor. Terminating server.", e);
+				close();
+				return;
 			} finally {
 				tSock.close();
 				tSock = null;
@@ -262,12 +271,11 @@ public class KVServerECS implements Runnable {
 				sendKVMessage(kvMsgSend, output);
 				receiveKVMessage(input); 			// wait for the ECS to close the socket.
 			} catch (Exception e) {
+				logger.debug("[To ECS] >>> Completed full shutdown process. Exiting this Thread.");
 				// ignore
 			}
 		} catch (Exception e) {
-			logger.error("Exception during shutdown process in ECS child of server #"
-						+ serverPort+ " connected to IP: '"+ ecsIP + "' \t port: "
-						+ ecsPort + "|ECS.", e);
+			logger.error("[To ECS] >>> Exception during shutdown process. Terminating Thread.", e);
 		} finally {
 			ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
 			close();
@@ -374,11 +382,6 @@ public class KVServerECS implements Runnable {
 			// LV structure: length, value
 			output.writeInt(bytes_msg.length);
 			output.write(bytes_msg);
-			if (kvMsg.getStatus() != StatusType.S2E_EMPTY_RESPONSE) {
-				// do not log empty response
-				logger.debug("#" + serverPort + "-" + ecsPort + "|ECS: "
-							+ "Sending 4(length int) " +  bytes_msg.length + " bytes.");
-			}
 			output.flush();
 		} catch (Exception e) {
 			logger.error("Exception when server #" + serverPort + " sends to IP: '"
@@ -403,11 +406,6 @@ public class KVServerECS implements Runnable {
 		if (!kvMsg.fromBytes(bytes)) {
 			throw new Exception("#" + serverPort + "-" + ecsPort + "|ECS: "
 								+ "Cannot convert all received bytes to KVMessage.");
-		}
-		if (kvMsg.getStatus() != StatusType.E2S_EMPTY_CHECK) {
-			// do not log empty check
-			logger.debug("#" + serverPort + "-" + ecsPort + "|ECS: "
-						+ "Receiving 4(length int) + " + size_bytes + " bytes.");
 		}
 		kvMsg.logMessageContent(true);
 		return kvMsg;

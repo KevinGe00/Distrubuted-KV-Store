@@ -140,6 +140,7 @@ public class KVServerChild implements Runnable {
 				/* SPECIAL CASE: this server just received KV pairs in its disk storage. */
 				if (Integer.parseInt(keyRecv) == serverPort) {
 					// sender is youself, can happen when you are the last node shutting down
+					logger.error("IMPOSSIBLE TO CONTACT YOURSELF.");
 					close();
 					return;
 				}
@@ -161,8 +162,16 @@ public class KVServerChild implements Runnable {
 					ptrKVServer.setSerStatus(serStatus_Copy);
 				}
 				// one-time connection.
-				close();
-				return;
+				try {
+					sendKVMessage(new KVMessage());
+					receiveKVMessage();
+				} catch (Exception e) {
+					;
+				} finally {
+					logger.debug("FINISHED REINIT STORE.");
+					close();
+					return;
+				}
 			}
 
 			// 1. server-status response for client request
@@ -442,8 +451,6 @@ public class KVServerChild implements Runnable {
 			// LV structure: length, value
 			output.writeInt(bytes_msg.length);
 			output.write(bytes_msg);
-			logger.debug("#" + serverPort + "-" + responsePort + ": "
-						+ "Sending 4(length int) " +  bytes_msg.length + " bytes.");
 			output.flush();
 		} catch (Exception e) {
 			logger.error("Exception when server #" + serverPort + " sends to IP: '"
@@ -463,8 +470,6 @@ public class KVServerChild implements Runnable {
 		KVMessage kvMsg = new KVMessage();
 		// LV structure: length, value
 		int size_bytes = input.readInt();
-		logger.debug("#" + serverPort + "-" + responsePort + ": "
-					+ "Receiving 4(length int) + " + size_bytes + " bytes.");
 		byte[] bytes = new byte[size_bytes];
 		input.readFully(bytes);
 		if (!kvMsg.fromBytes(bytes)) {

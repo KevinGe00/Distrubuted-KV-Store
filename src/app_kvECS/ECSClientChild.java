@@ -27,6 +27,7 @@ import shared.messages.KVMessageInterface.StatusType;
 public class ECSClientChild implements Runnable {
 
     private static Logger logger = Logger.getRootLogger();
+    private String PROMPT;
     // server's
     private Socket responseSocket;
     private String responseIP;
@@ -50,6 +51,7 @@ public class ECSClientChild implements Runnable {
         this.ptrECSClient = ptrECSClient;
         ecsPort = ptrECSClient.getPort();
         cacheMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata());
+        PROMPT = "[To #<NOT INITIALIZED YET>] >>> ";
     }
 
 
@@ -144,6 +146,7 @@ public class ECSClientChild implements Runnable {
             return;
         }
         serverListeningPort = Integer.parseInt(keyRecv);
+        PROMPT = "[To #" + serverListeningPort + "] >>> ";
         storeDir = valueRecv;
         // For ECS, add new node
         if (!ptrECSClient.addNewNode(responseIP, serverListeningPort, storeDir)) {
@@ -258,6 +261,7 @@ public class ECSClientChild implements Runnable {
                  * After receiving this, in next iteration, a Metadate Update should be sent
                  */
                 String strPort_ServerRecvFile = keyRecv;
+                logger.error("000000000000000");
                 if (!strPort_ServerRecvFile.equals(serverListeningPort)) {
                     ptrECSClient.replicateNewServer(responseIP + ":" + strPort_ServerRecvFile);
                 }
@@ -278,38 +282,38 @@ public class ECSClientChild implements Runnable {
         // 3. Recalculate and update the meta-data
         // 4. Send a meta-data update to the predecessor node
 
-        // 1. Set the write-lock on the server that is to be removed
-        // send Write Lock message
-        KVMessage kvMsgSend = new KVMessage();
+        KVMessage kvMsgSend;
+        KVMessage kvMsgRecv;
+        // 1. (Set the write-lock on the server that is to be removed) Send Write Lock message
+        logger.debug(PROMPT + "Received shutdown request, sending back WRITE LOCK...");
+        kvMsgSend = new KVMessage();
         kvMsgSend.setStatus(StatusType.E2S_WRITE_LOCK_WITH_KEYRANGE);
         String predecessorFullAddress = ptrECSClient.predecessors.get(thisFullAddress);
         if (predecessorFullAddress == null) {
-            logger.error("ECS got null for " + thisFullAddress + "'s predecessor. Exiting...");
+            logger.error(PROMPT + "predecessors.get() return null for "
+                        + thisFullAddress + ". Terminating this thread.");
             close();
             return;
         }
+        kvMsgSend.setKey(predecessorFullAddress.split(":")[1]);
         if (thisFullAddress.equals(predecessorFullAddress)) {
-            // move files to itself, can happen when it is the last node shutting down
-            // quick shutdown
-            logger.debug("The last server #" + serverListeningPort + " is shutting down.");
-            kvMsgSend.setKey("" + serverListeningPort);
+            // Special Case: last server is shutting down
             if (!sendKVMessage(kvMsgSend)) {
                 close();
                 return;
             }
-            logger.error("111111111111111111111");
             try {
-                receiveKVMessage();     // wait for server to close the socket
-                close();
-                return;
+                // expect the server to close the socket and throw an expected Exception
+                logger.debug(PROMPT + "Sent WRITE LOCK, expect last server to close the socket.");
+                receiveKVMessage();
             } catch (Exception e) {
-                logger.info("Server at IP: '" + responseIP + "' \t port: " + serverListeningPort
-                            + " has shutdown and was the last node. ECS child shutting down...");
+                logger.debug(PROMPT + "Server has shut down. Exiting this thread.");
+            } finally {
                 close();
                 return;
             }
         }
-        logger.error("3333333333333333333333");
+        // General Case: need to wait for file transfer
         // "storeDir_predecessor,RangeFrom_this,RangeTo_this,IP_predecessor,L-port_predecessor"
         String predecessorStoreDir = ptrECSClient.getHashRing().get(hash(predecessorFullAddress)).getStoreDir();
         String[] predecessorIP_port = predecessorFullAddress.split(":");
@@ -325,14 +329,11 @@ public class ECSClientChild implements Runnable {
         }
         try {
             // block until receiving response, exception when socket closed
-            logger.debug("Waiting for server #" + serverListeningPort + " to finish file transfer.");
-            KVMessage kvMsgRecv = receiveKVMessage();
-            logger.debug("Received sever #" + serverListeningPort + " SD completion. Now update nodes and exit.");
+            logger.debug(PROMPT + "WRITE LOCK sent, waiting for its file transfer.");
+            kvMsgRecv = receiveKVMessage();
+            logger.debug(PROMPT + "It completed file transfer, removing node.");
         } catch (Exception e) {
-            logger.error("Exception when receiving message at ECS #"
-                    + ecsPort+ " connected to IP: '"+ responseIP + "' \t port: "
-                    + responsePort
-                    + ".", e);
+            logger.error(PROMPT + "Did not receive response for file transfer. Terminating this thread.", e);
         }
 
         // 2. Remove corresponding node from hashring
@@ -340,11 +341,10 @@ public class ECSClientChild implements Runnable {
         // 4. Send a meta-data update to the predecessor node
         ECSClient.RemovedNode removedNode =  ptrECSClient.removeNode(responseIP, serverListeningPort);
         if (!removedNode.success) {
-            logger.error("Failed to remove server node at IP: '"+ responseIP + "' \t L-port: "
-                        + serverListeningPort + ". Exiting very soon...");
+            logger.error(PROMPT + "Fail to remove Node. Terminating this thread.");
         }
 
-        logger.debug("ECS thread responsible for server #" + serverListeningPort + " is exiting.");
+        logger.debug(PROMPT + "Completed full shutdown process. Exiting this Thread.");
         close();
         return;
     }
@@ -375,11 +375,6 @@ public class ECSClientChild implements Runnable {
             // LV structure: length, value
             output.writeInt(bytes_msg.length);
             output.write(bytes_msg);
-            if (kvMsg.getStatus() != StatusType.E2S_EMPTY_CHECK) {
-                // do not log empty check
-                logger.debug("ECS #" + ecsPort + "-" + serverListeningPort + ": "
-                        + "Sending 4(length int) " +  bytes_msg.length + " bytes.");
-            }
             output.flush();
         } catch (Exception e) {
             logger.error("Exception when ECS #" + ecsPort + " sends to IP: '"
@@ -405,11 +400,6 @@ public class ECSClientChild implements Runnable {
             throw new Exception("ECS #" + ecsPort + "-" + serverListeningPort + ": "
                     + "Cannot convert all received bytes to KVMessage.");
         }
-        if (kvMsg.getStatus() != StatusType.S2E_EMPTY_RESPONSE) {
-            // do not log empty response
-            logger.debug("ECS #" + ecsPort + "-" + serverListeningPort + ": "
-                + "Receiving 4(length int) + " + size_bytes + " bytes.");
-        }
         kvMsg.logMessageContent(true);
         return kvMsg;
     }
@@ -426,16 +416,12 @@ public class ECSClientChild implements Runnable {
             return;
         }
         try {
-            logger.debug("ECS #" + ecsPort + " closing response socket"
-                    + " connected to IP: '" + responseIP + "' \t port: "
-                    + responsePort + ". \nExiting very soon.");
             responseSocket.close();
-            responseSocket = null;
+            logger.debug(PROMPT + "Closed the socket. Exiting this thread.");
         } catch (Exception e) {
-            logger.error("Unexpected Exception! Unable to ECS"
-                    + "#" + ecsPort + " connected to IP: '" + responseIP
-                    + "' \t port: " + responsePort + "\nExiting very soon.", e);
+            logger.error(PROMPT + "Failed to close the socket. Terminating this thread.", e);
             // unsolvable error, thread must be shut down now
+        } finally {
             responseSocket = null;
         }
     }
