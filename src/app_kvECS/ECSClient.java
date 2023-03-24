@@ -266,9 +266,6 @@ public class ECSClient implements IECSClient {
         String succ_dir = getParentPath(succ.getStoreDir());
         String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
         String curr_dir = getParentPath(curr.getStoreDir());
-        System.out.println("curr STORE DIR: " + curr.getStoreDir());
-        System.out.println("Successor of " + fullAddress + " is " + successors.get(fullAddress));
-        System.out.println("Predecessor of " + fullAddress + " is " + predecessors.get(fullAddress));
         logger.debug("curr STORE DIR: " + curr.getStoreDir());
         logger.debug("Successor of " + fullAddress + " is " + successors.get(fullAddress));
         logger.debug("Predecessor of " + fullAddress + " is " + predecessors.get(fullAddress));
@@ -309,12 +306,10 @@ public class ECSClient implements IECSClient {
             int pathLength = pathSegments.length;
             if (pathLength >= 2 && pathSegments[pathLength - 1].equals(pathSegments[pathLength - 2])) {
                 logger.debug("Skipping Delete, same replica shouldn't exist in same server, source is: " + source);
-                System.out.println("SKIPPING: " + source);
                 return;
             }
         } catch (IOException e) {
             logger.debug("Failed to get canonical path");
-            System.err.println("Failed to obtain canonical path: " + e.getMessage());
             return;
         }
 
@@ -324,16 +319,14 @@ public class ECSClient implements IECSClient {
                 logger.debug("Current file: " + f.toPath());
                 if (! Files.isSymbolicLink(f.toPath())) {
                     logger.debug("Deleting file: " + f.toPath());
-                    System.out.println("DELETING CONTENTS: " + f.toPath());
                     deleteFolder(f.getPath());
                 }
             }
         }
         if (folder.delete()) {
-            System.out.println("DELETED: " + folder.toPath());
             logger.debug("DELETED: " + folder.toPath());
         }else{
-            logger.debug("DELETE FUCKED UPPPPP");
+            logger.debug("DELETE SCREWED UP");
         }
 
     }
@@ -343,16 +336,16 @@ public class ECSClient implements IECSClient {
         File destinationFolder = new File(destination);
         // Do nothing if the source is itself
         if (getParentPath(source).equals(getParentPath(destination))) {
-            System.out.println("SAME PARENT: " + sourceFolder.toPath() + " and " + destinationFolder.toPath());
             return;
         }
-        System.out.println("COPYING FROM " + source + " TO " + destination);
+        //System.out.println("COPYING FROM " + source + " TO " + destination);
 
         if (!destinationFolder.exists()) {
             if (destinationFolder.mkdirs()) {
                 ;
             } else {
-                System.out.println("Failed to create directory: " + destinationFolder);
+                //System.out.println("Failed to create directory: " + destinationFolder);
+                ;
             }
         }
         for (String child : sourceFolder.list()) {
@@ -360,7 +353,7 @@ public class ECSClient implements IECSClient {
             File destinationChild = new File(destinationFolder, child);
             try {
                 Files.copy(sourceChild.toPath(), destinationChild.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                System.out.println("Copied: " + sourceChild.toPath() + " to " + destinationChild.toPath());
+                //System.out.println("Copied: " + sourceChild.toPath() + " to " + destinationChild.toPath());
             } catch (IOException e) {
                 e.printStackTrace();
             }

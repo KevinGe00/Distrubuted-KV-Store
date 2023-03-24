@@ -3,8 +3,11 @@ package performance;
 import app_kvClient.KVClient;
 import app_kvECS.ECSClient;
 import app_kvServer.KVServer;
+import logger.LogSetup;
 import org.apache.log4j.Level;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Random;
 
@@ -143,17 +146,87 @@ public class PerformanceTester{
         }
     }
 
-    public static void main(String[] args) throws InterruptedException {
+    public static double m3_add_remove_servers_time_test(Integer numServers){
+        try {
+
+            // Create an ArrayList to store client threads and latencies
+            KVServer[] servers = new KVServer[numServers];
+
+            long system_start = System.currentTimeMillis();
+            ECSClient ecsClient = new ECSClient("localhost", 33333);
+            new LogSetup("logs/performance/m3.log", Level.toLevel("ERROR"));
+            ecsClient.initializeServer();
+            ecsClient.run();
+
+            servers[0] = new KVServer(50001);
+            servers[0].setHostname("localhost");
+            servers[0].setBootstrapServer("localhost:33333");
+            servers[0].initializeStore("out" + File.separator + servers[0].getPort() + File.separator + "Coordinator");
+            new Thread(servers[0]).start();
+
+            // Add 100 values to first server
+           Thread t = new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        KVClient client_KV = new KVClient();
+                        client_KV.handleCommand("connect localhost 50001");
+
+                        for (int j = 0; j <= 5; j++) {
+                            String key = Integer.toString(j);
+                            String value = Integer.toString(j);
+
+                            client_KV.handleCommand("put " + key + " " + value);
+                        }
+
+                        client_KV.handleCommand("quit");
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }}});
+            t.start();
+            Thread.sleep(1000);
+
+            t.join();
+
+            for (int i = 1; i < numServers-1; i++) {
+                servers[i] = new KVServer(50000 + i + 1);
+                servers[i].setHostname("localhost");
+                servers[i].setBootstrapServer("localhost:33333");
+                servers[i].initializeStore("out" + File.separator + servers[i].getPort() + File.separator + "Coordinator");
+                new LogSetup("logs/performance/m3.log", Level.toLevel("ERROR"));
+                new Thread(servers[i]).start();
+            }
+
+            long system_end = System.currentTimeMillis();
+            double total_time = system_end - system_start;
+
+            for (KVServer server : servers) {
+                server.close();
+            }
+            Thread.sleep(1000);
+            return total_time;
+
+        } catch (Exception e) {
+            System.out.println("M3 adding servers testing failed " + e);
+            return -1.0;
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException, IOException {
         PerformanceTester performance = new PerformanceTester();
-        Integer numServers = 1;
+        new LogSetup("logs/performance/m3.log", Level.toLevel("ERROR"));
+        Integer numServers = 3;
         Integer numClients = 20;
 
-        double avgLatency = performance.m2_latency_throughput_test(numServers,numClients);
-        Thread.sleep(1000);
+        //double avgLatency = performance.m2_latency_throughput_test(numServers,numClients);
+        //Thread.sleep(1000);
 
-        System.out.println("#############################################################################################################################################################");
-        System.out.println("#################### Average latency across all clients for " + numServers + " servers and " + numClients + " clients: " + avgLatency + " ms. #################################");
-        System.out.println("#############################################################################################################################################################");
+        //System.out.println("#############################################################################################################################################################");
+        //System.out.println("#################### Average latency across all clients for " + numServers + " servers and " + numClients + " clients: " + avgLatency + " ms. #################################");
+        //System.out.println("#############################################################################################################################################################");
+
+        double total_time = m3_add_remove_servers_time_test(20);
+        System.out.println("Setting up " + numServers + " takes " + total_time + " ms.");
         System.exit(1);
 
     }
