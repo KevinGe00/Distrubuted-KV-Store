@@ -202,6 +202,7 @@ public class ECSClient implements IECSClient {
         // Happens in writeLockProcess of KVServerECS
 
         String fullAddress = serverHost + ":" + serverPort;
+        IECSNode curr = hashRing.get(hash(fullAddress)); // DN
         IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
         IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
         IECSNode pred_pred = hashRing.get(hash(predecessors.get(predecessors.get(fullAddress))));
@@ -220,18 +221,25 @@ public class ECSClient implements IECSClient {
         deleteFolder(succ_dir + File.separator + serverPort);
 
         // 3. Delete DN's succ's succ's replica of DN
-        deleteFolder(succ_succ_dir + File.separator + serverPort);
+        if (curr.getNodePort() != succ_succ.getNodePort()) {
+            deleteFolder(succ_succ_dir + File.separator + serverPort);
+        }
 
         // 4. Copy DN's pred pred as a replica in DN's succ
-        copyFolder(pred_pred_dir, succ_dir + File.separator + pred_pred.getNodePort());
+        if (curr.getNodePort() != pred_pred.getNodePort()) {
+            copyFolder(pred_pred_dir, succ_dir + File.separator + pred_pred.getNodePort());
+        }
 
         // 5. Copy DN's pred as a replica in DN's succ succ
-        copyFolder(pred_dir, succ_succ_dir + File.separator + pred.getNodePort());
+        if (curr.getNodePort() != succ_succ.getNodePort()) {
+            copyFolder(pred_dir, succ_succ_dir + File.separator + pred.getNodePort());
+        }
 
         // 6. Finally, delete the entire folder of DN
-        IECSNode curr = hashRing.get(hash(fullAddress));
         String curr_dir = getParentPath(curr.getStoreDir());
         deleteFolder(curr_dir);
+
+        logger.info(fullAddress + " replication deletion completed.");
     }
 
     /**
