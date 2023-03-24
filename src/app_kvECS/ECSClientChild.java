@@ -297,8 +297,11 @@ public class ECSClientChild implements Runnable {
                 close();
                 return;
             }
+            logger.error("111111111111111111111");
             try {
                 receiveKVMessage();     // wait for server to close the socket
+                close();
+                return;
             } catch (Exception e) {
                 logger.info("Server at IP: '" + responseIP + "' \t port: " + serverListeningPort
                             + " has shutdown and was the last node. ECS child shutting down...");
@@ -306,6 +309,7 @@ public class ECSClientChild implements Runnable {
                 return;
             }
         }
+        logger.error("3333333333333333333333");
         // "storeDir_predecessor,RangeFrom_this,RangeTo_this,IP_predecessor,L-port_predecessor"
         String predecessorStoreDir = ptrECSClient.getHashRing().get(hash(predecessorFullAddress)).getStoreDir();
         String[] predecessorIP_port = predecessorFullAddress.split(":");
