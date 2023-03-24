@@ -90,8 +90,6 @@ public class KVStore extends Thread implements KVCommInterface {
 		if (!kvMsg.setValue(value)) {
 			throw new Exception("PUT: Cannot set KVMessage's Value to '" + value + "'.");
 		}
-		// print hash value of the key
-		logger.debug(">>> Key '" + key + "' hashes to '" + hash(key).toString(16) + "'");
 		sendKVMessage(kvMsg);
 		return receiveKVMessage();
 	}
@@ -108,8 +106,6 @@ public class KVStore extends Thread implements KVCommInterface {
 		if (!kvMsg.setValue(null)) {
 			throw new Exception("GET: Cannot set KVMessage's Value to 'null'.");
 		}
-		// print hash value of the key
-		logger.debug(">>> Key '" + key + "' hashes to '" + hash(key).toString(16) + "'");
 		sendKVMessage(kvMsg);
 		return receiveKVMessage();
 	}
