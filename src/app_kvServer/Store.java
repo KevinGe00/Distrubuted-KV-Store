@@ -8,21 +8,35 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/**
+ * There should be a Store for each folder for a KVServer, example:
+ * 1 Store object for out/10000/Coordinator    <- Coordinator
+ * 1 Store object for out/10000/20000          <- Replica
+ * 1 Store object for out/10000/30000          <- Replica
+ */
 public class Store {
     private static Logger logger = Logger.getRootLogger();
 
+    public int serverPort;
+    public int portStore;
+    private String PROMPT;
     private String dirStore;
-    private Map<String, String> store;
+    private Map<String, String> kvPairs;
     private Map<String, ReadWriteLock> fileLocks;
     
     /**
      * Initialize Store which is facilitates the persistence mechanisms
      * User must catch exception from this class.
+     * @param serverPort KVServer's listening port
+     * @param portStore server name, aka port number of the server, which can be a coordinator or a replica
      * @param dirStore relative of where the data should be persisted
      */
-    public Store(String dirStore) throws Exception {
+    public Store(int serverPort, int portStore, String dirStore) throws Exception {
+        this.serverPort = serverPort;
+        this.portStore = portStore;
+        this.PROMPT = ">>> Server #" + serverPort + " -> Store #" + portStore + " >>> ";
         this.dirStore = dirStore;
-        store = new HashMap<>();
+        kvPairs = new HashMap<>();
         fileLocks = new HashMap<>();
 
         initialize();
@@ -33,26 +47,26 @@ public class Store {
 
         if (!directory.exists()) {
             // This check needs to be first, to create non-existing directories
-            logger.info("Store directory does not exist, creating directory for Store...");
+            // logger.info("Store directory does not exist, creating directory for Store...");
             directory.mkdirs();
         } else if (!directory.isDirectory()) {
-            System.err.println("The directory store path must be a directory.");
-            throw new Exception("Invalid directory input for server Store.");
+            throw new Exception(PROMPT + "dirStore is not a directory.");
         }
 
-        String infoMsg = "KV pairs already in disk:";
+        StringBuilder str = new StringBuilder();
+        str.append(PROMPT);
+        str.append("Existing KV Pairs:");
         for (File file : directory.listFiles()) {
             String key = file.getName();
             String value = readContent(file);
-            store.put(key, value);
+            kvPairs.put(key, value);
             fileLocks.put(key, new ReentrantReadWriteLock());
-            infoMsg = infoMsg + " <" + key + ">";
+            str.append(" <" + key + ">");
         }
-        logger.info(infoMsg);
+        logger.debug(str.toString());
     }
 
     public String readContent(File file) {
-        // one-time call during initialization, no need for file lock
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             StringBuilder contents = new StringBuilder();
             String line;
@@ -66,8 +80,7 @@ public class Store {
             return result;
         } catch (IOException e) {
             String errMsg = "Error while reading contents of " + file.getAbsolutePath();
-            System.err.println(errMsg);
-            logger.error(errMsg, e);
+            logger.error(PROMPT + errMsg, e);
             return "";
         }
     }
@@ -81,7 +94,7 @@ public class Store {
     private Lock getKeyWriteLock(String key) {
         ReadWriteLock rwLock = fileLocks.get(key);
         if (rwLock == null) {
-            logger.debug("Created a new read/write lock for key <" + key + ">.");
+            // logger.debug("Created a new read/write lock for key <" + key + ">.");
             fileLocks.put(key, new ReentrantReadWriteLock());
             rwLock = fileLocks.get(key);
         }
@@ -96,15 +109,15 @@ public class Store {
     private Lock getKeyReadLock(String key) throws Exception {
         ReadWriteLock rwLock = fileLocks.get(key);
         if (rwLock == null) {
-            logger.error("Did NOT check if the key <" + key + "> existed. "
-                        + "Tried to get a READ lock for the non-existing key.");
-            throw new Exception("Tried to get a READ lock for non-existing key.");
+            // logger.error("Did NOT check if the key <" + key + "> existed. "
+            //             + "Tried to get a READ lock for the non-existing key.");
+            throw new Exception(PROMPT + "Tried to get a READ lock for non-existing key.");
         }
         return rwLock.readLock();
     }
 
     public boolean containsKey(String key) {
-        return store.containsKey(key);
+        return kvPairs.containsKey(key);
     }
 
     public void clearStorage(){
@@ -112,7 +125,7 @@ public class Store {
         File[] files = directory.listFiles();
         if (files == null) {
             // no file on disk, clear file in memory
-            store.clear();
+            kvPairs.clear();
             fileLocks.clear();
             return;
         }
@@ -126,19 +139,19 @@ public class Store {
             Lock wLock = getKeyWriteLock(key);
             try {
                 wLock.lock();
-                logger.debug("Key: <" + key + "> Lock W acquired. (clearStorage)");
+                // logger.debug("Key: <" + key + "> Lock W acquired. (clearStorage)");
                 // delete lock, file, memory
                 fileLocks.remove(key);
                 file.delete();
-                store.remove(key);
+                kvPairs.remove(key);
             } finally {
                 // always release the lock
-                logger.debug("Key: <" + key + "> Lock W released. (clearStorage)");
+                // logger.debug("Key: <" + key + "> Lock W released. (clearStorage)");
                 wLock.unlock();
             }
         }
         // in case memory still has files
-        store.clear();
+        kvPairs.clear();
         fileLocks.clear();
     }
 
@@ -158,11 +171,11 @@ public class Store {
         String value = null;
         try {
             rLock.lock();
-            logger.debug("Key: <" + key + "> Lock R acquired. (get)");
-            value = store.get(key);
+            // logger.debug("Key: <" + key + "> Lock R acquired. (get)");
+            value = kvPairs.get(key);
         } finally {
             // always release the lock
-            logger.debug("Key: <" + key + "> Lock R released. (get)");
+            // logger.debug("Key: <" + key + "> Lock R released. (get)");
             rLock.unlock();
         }
         return value;
@@ -177,12 +190,12 @@ public class Store {
         Lock wLock = getKeyWriteLock(key);
         try {
             wLock.lock();
-            logger.debug("Key: <" + key + "> Lock W acquired. (put)");
-            store.put(key, value);
+            // logger.debug("Key: <" + key + "> Lock W acquired. (put)");
+            kvPairs.put(key, value);
             savePairToDisk(key, value);
         } finally {
             // always release the lock
-            logger.debug("Key: <" + key + "> Lock W released. (put)");
+            // logger.debug("Key: <" + key + "> Lock W released. (put)");
             wLock.unlock();
         }
     }
@@ -196,12 +209,12 @@ public class Store {
         Lock wLock = getKeyWriteLock(key);
         try {
             wLock.lock();
-            logger.debug("Key: <" + key + "> Lock W acquired. (update)");
-            store.put(key, value);
+            // logger.debug("Key: <" + key + "> Lock W acquired. (update)");
+            kvPairs.put(key, value);
             savePairToDisk(key, value);
         } finally {
             // always release the lock
-            logger.debug("Key: <" + key + "> Lock W released. (update)");
+            // logger.debug("Key: <" + key + "> Lock W released. (update)");
             wLock.unlock();
         }
     }
@@ -214,15 +227,15 @@ public class Store {
         Lock wLock = getKeyWriteLock(key);
         try {
             wLock.lock();
-            logger.debug("Key: <" + key + "> Lock W acquired. (delete)");
+            // logger.debug("Key: <" + key + "> Lock W acquired. (delete)");
             // delete lock, memory, file
             fileLocks.remove(key);
-            store.remove(key);
+            kvPairs.remove(key);
             File file = new File(dirStore, key);
             file.delete();
         } finally {
             // always release the lock
-            logger.debug("Key: <" + key + "> Lock W released. (delete)");
+            // logger.debug("Key: <" + key + "> Lock W released. (delete)");
             wLock.unlock();
         }
     }
@@ -234,8 +247,7 @@ public class Store {
             writer.print(value);
         } catch (IOException e) {
             String errMsg = "Unable to save key-value pair to disk: " + file.getAbsolutePath();
-            System.err.println(errMsg);
-            logger.error(errMsg, e);
+            logger.error(PROMPT + errMsg, e);
         }
     }
 }
