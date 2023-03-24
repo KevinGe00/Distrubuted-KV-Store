@@ -9,6 +9,8 @@ import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.junit.Test;
 import org.junit.AfterClass;
+import shared.messages.KVMessage;
+import shared.messages.KVMessageInterface;
 
 import java.io.File;
 import java.io.IOException;
@@ -132,6 +134,51 @@ public class ReplicationTest extends TestCase {
         assertNull(ex);
     }
 
+    @Test
+    public void testTwoReplicaFoldersWithData() {
+        String key = "hello";
+        String value = "world";
+        Exception ex = null;
+        KVServer server2 = new KVServer(7001);
 
+        try {
+            AllTests.server.putKV(key, value);
+            server2.setHostname("localhost");
+            server2.setBootstrapServer("localhost:30000");
+            server2.initializeStore("out" + File.separator + server2.getPort() + File.separator + "Coordinator");
+
+            File original = new File(AllTests.server.getDirStore() + File.separator + "hello");
+            File replica = new File(ECSClient.getParentPath(server2.getDirStore()) + File.separator + AllTests.server.getPort() + File.separator + "hello");
+
+            assert (original.exists() && replica.exists());
+            System.out.println("SUCCESS: Replica contains data.");
+        } catch (Exception e) {
+            ex = e;
+        }
+
+        server2.kill();
+        assertNull(ex);
+    }
+
+    @Test
+    public void testWrongServerBeforeReplication() {
+        String key = "hello";
+        String value = "world";
+        Exception ex = null;
+        KVServer server2 = new KVServer(7001);
+
+        try {
+            server2.setHostname("localhost");
+            server2.setBootstrapServer("localhost:30000");
+            server2.initializeStore("out" + File.separator + server2.getPort() + File.separator + "Coordinator");
+            server2.putKV(key, value);
+            assert false;
+            System.out.println("FAILURE: Wrong server stores put request before replication.");
+        } catch (Exception e) {
+            ex = e;
+        }
+
+        server2.kill();
+    }
 
 }
