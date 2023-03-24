@@ -211,9 +211,8 @@ public class KVServer extends Thread implements IKVServer {
 	@Override
 	public synchronized boolean setSerStatus(SerStatus status) {
 		if (this.status != status) {
+			logger.debug(">>> Set #" + getPort() + " to " + status.name());
 			this.status = status;
-			logger.info("Set server #" + getPort() + " status to "
-						+ this.status.name());
 		}
 		return true;
 	}
@@ -516,7 +515,7 @@ public class KVServer extends Thread implements IKVServer {
 	 * @return true for success, false otherwise
 	 */
 	private boolean initializeServer() {
-    	logger.info("Initialize server...");
+    	logger.info("Initializing server #" + port + "...");
 		// Crtl+C shutdown hook
 		Runtime.getRuntime().addShutdownHook(new Thread()
 		{
@@ -653,20 +652,20 @@ public class KVServer extends Thread implements IKVServer {
 	@Override
     public synchronized void kill(){
 		// immediately returns; should not call this, use close() instead.
-		logger.debug("Server #" + getPort() + " is being KILLED.");
+		logger.debug("Commanding #" + getPort() + " to be KILLED.");
 		setSerStatus(SerStatus.SHUTTING_DOWN);
 		joinECSThread(true);
-        closeServerSocket();
+		closeServerSocket();
 		joinChildThreads(true);
 	}
 
 	@Override
     public synchronized void close(){
-		logger.debug("Server #" + getPort() + " is shutting down.");
+		logger.info("Commanding #" + getPort() + " to shutdown.");
 		// for internal shutdown, SerStatus should be SHUTTING_DOWN before this.
 		setSerStatus(SerStatus.SHUTTING_DOWN);
-		closeServerSocket();
 		joinChildThreads(false);
+		closeServerSocket();
 		joinECSThread(false);
 	}
 
@@ -770,11 +769,11 @@ public class KVServer extends Thread implements IKVServer {
 			return;
 		}
 		try {
-			logger.debug("Closing server #" + getPort()+ " ECS socket...");
+			logger.debug(">>> Closing #" + getPort()+ "'s ECS-related socket...");
 			sock.close();
 			ECSObject.childSocket = null;
 		} catch (Exception e) {
-			logger.error("Unexpected Exception! Unable to close server ECS socket"
+			logger.error("Cannot close  ECS socket"
 					+ " at host: '" + getECSHostname()
 					+ "' \tport: " + getECSPort(), e);
 			// unsolvable error, the server must be shut down now.
