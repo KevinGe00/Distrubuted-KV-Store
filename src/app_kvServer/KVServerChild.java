@@ -163,7 +163,7 @@ public class KVServerChild implements Runnable {
 				}
 				// one-time connection.
 				try {
-					sendKVMessage(new KVMessage());
+					sendKVMessage(emptyResponse());
 					receiveKVMessage();
 				} catch (Exception e) {
 					;
@@ -477,6 +477,12 @@ public class KVServerChild implements Runnable {
 								+ "Cannot convert all received bytes to KVMessage.");
 		}
 		kvMsg.logMessageContent(true);
+		return kvMsg;
+	}
+
+	private KVMessage emptyResponse() {
+		KVMessage kvMsg = new KVMessage();
+		kvMsg.setStatus(StatusType.S2E_EMPTY_RESPONSE);
 		return kvMsg;
 	}
 }

@@ -197,7 +197,6 @@ public class KVServerECS implements Runnable {
 				;
 			} else {
 				// try receiving a the Write Lock again
-				logger.debug("[To ECS] >>> Try receiving the shutdown WRITE LOCK again.");
 				kvMsgSend = emptyResponse();
 				if (!sendKVMessage(kvMsgSend, output)) {
 					logger.error("[To ECS] >>> Failed to receive shutdown WRITE LOCK. Terminating server.");
@@ -312,12 +311,18 @@ public class KVServerECS implements Runnable {
 			DataOutputStream tOutput = new DataOutputStream(new BufferedOutputStream(tSock.getOutputStream()));
 			kvMsgSend = new KVMessage();
 			kvMsgSend.setStatus(StatusType.S2A_FINISHED_FILE_TRANSFER);
-			kvMsgSend.setKey("" + serverPort); 		// use own server port to help the receiver to distinguish
+			kvMsgSend.setKey("" + serverPort); 		// provide its listening port to the predecessor
 			try {
-				sendKVMessage(kvMsgSend, tOutput);
-				receiveKVMessage(tInput); 			// wait for the target server to close the socket.
+				if (!sendKVMessage(kvMsgSend, tOutput)) {
+					logger.error("[To ECS] >>> Cannot contact predecessor server. Terminating server.");
+					close();
+					return;
+				}
+				receiveKVMessage(tInput); 			// expect predecessor to reply before closing
 			} catch (Exception e) {
-				// ignore
+				logger.error("[To ECS] >>> Exception when communicating with predecessor. Terminating server.", e);
+				close();
+				return;
 			} finally {
 				tSock.close();
 				tSock = null;
