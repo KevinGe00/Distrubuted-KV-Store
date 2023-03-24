@@ -80,6 +80,13 @@ public class ECSClient implements IECSClient {
         return running;
     }
     /* Port */
+    public HashMap<String, String> getSuccessors(){
+        return successors;
+    }
+
+    public HashMap<String, String> getPredecessors(){
+        return predecessors;
+    }
     public int getPort(){
         return port;
     }
@@ -248,6 +255,7 @@ public class ECSClient implements IECSClient {
     public void replicateNewServer(String fullAddress){
         System.out.println("REPLICATE NEW SERVER, FULLADDRESS: " + fullAddress);
         IECSNode curr = hashRing.get(hash(fullAddress));
+
         IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
         IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
         IECSNode pred_pred = hashRing.get(hash(predecessors.get(predecessors.get(fullAddress))));
