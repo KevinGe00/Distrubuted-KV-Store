@@ -1,5 +1,6 @@
 package testing;
 
+import java.io.File;
 import java.io.IOException;
 
 import app_kvECS.ECSClient;
@@ -30,7 +31,7 @@ public class AllTests {
 			server = new KVServer(7000);
 			server.setHostname("localhost");
 			server.setBootstrapServer("localhost:30000");
-			server.initializeStore("out/" + "7000");
+			server.initializeStore("out" + File.separator + server.getPort() + File.separator + "Coordinator");
 			new Thread(server).start();
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -39,6 +40,8 @@ public class AllTests {
 	
 	public static Test suite() {
 		TestSuite clientSuite = new TestSuite("Basic Storage ServerTest-Suite");
+		clientSuite.addTestSuite(HashMapTest.class);
+		clientSuite.addTestSuite(ReplicationTest.class);
 		clientSuite.addTestSuite(ConnectionTest.class);
 //		clientSuite.addTestSuite(InteractionTest.class);
 //		clientSuite.addTestSuite(StoreTest.class);
