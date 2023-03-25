@@ -501,6 +501,7 @@ public class ECSClient implements IECSClient {
         // at this point, updateMetadataWithNewNode or updateMetadataAfterNodeRemoval has already run
 
         if (metadata.size() <= 3) {
+            // if only 3 or less nodes in ring, each node has copy of every single kv pair in the entire ring
             for (String key : metadata.keySet()) {
                 List<BigInteger> keyrange = metadata.get(key);
                 BigInteger range_start = keyrange.get(0);
@@ -510,6 +511,7 @@ public class ECSClient implements IECSClient {
             return;
         }
 
+        // changes are only propagated to as far as 3 consecutive pred back
         String predAddr = predecessors.get(fullAddress);
         String predPredAddr = predecessors.get(predAddr);
         String predPredPredAddr = predecessors.get(predPredAddr);
