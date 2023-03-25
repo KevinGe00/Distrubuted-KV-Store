@@ -813,45 +813,52 @@ public class KVServer extends Thread implements IKVServer {
 		return true;
 	}
 
+	private final Object moveFileLock = new Object();
 	/**
 	 * Transfer all KV pairs that hash to a specific keyrange to a new specified directory, 
 	 * this server is responsible to send a notice to ECS when the file transfer finishes.
 	 * In addition, it is responsible to send the server that receives the file a notice to release Write Lock.
 	 */
     public void moveFilesTo(String dirNewStore, List<BigInteger> range) {
-		SerStatus serStatus = getSerStatus();
-		if (serStatus == SerStatus.RUNNING) {
-			setSerStatus(SerStatus.WRITE_LOCK);
-		}
-        String sourceFolder = dirStore;
-        String destinationFolder = dirNewStore;
-		
-        File srcFolder = new File(sourceFolder);
-        File destFolder = new File(destinationFolder);
+		synchronized (moveFileLock) {
+			SerStatus serStatus = getSerStatus();
+			if (serStatus == SerStatus.RUNNING) {
+				setSerStatus(SerStatus.WRITE_LOCK);
+			}
+			String sourceFolder = dirStore;
+			String destinationFolder = dirNewStore;
 
-        File[] files = srcFolder.listFiles();
+			File srcFolder = new File(sourceFolder);
+			File destFolder = new File(destinationFolder);
 
-		BigInteger range_from = range.get(0);
-        BigInteger range_to = range.get(1);
-        // Copy each files with range the source folder to the destination folder
-        for (File file : files) {
-            try {
-                BigInteger hashKey = hash(file.getName());
-                
-                if (isBounded(hashKey, range_from, range_to)) {
-                    Path srcPath = file.toPath();
-                    Path destPath = new File(destFolder, file.getName()).toPath();
-					logger.debug("Moving file " + file.getName() + " to " + destFolder.getAbsolutePath());
-                    Files.copy(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
-					file.delete();
-					logger.debug("Finished deleting.");
-                }
-            } catch (IOException e) {
-                logger.error("Server #" + getPort() + " failed to move file " + file.getName()
+			File[] files = srcFolder.listFiles();
+
+			BigInteger range_from = range.get(0);
+			BigInteger range_to = range.get(1);
+			// Copy each files with range the source folder to the destination folder
+			for (File file : files) {
+				try {
+					BigInteger hashKey = hash(file.getName());
+
+					if (isBounded(hashKey, range_from, range_to)) {
+						Path srcPath = file.toPath();
+						Path destPath = new File(destFolder, file.getName()).toPath();
+						logger.debug("Moving file " + file.getName() + " to " + destFolder.getAbsolutePath());
+						Files.copy(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
+						if (Files.exists(destPath) && Files.size(srcPath) == Files.size(destPath)) {
+							file.delete();
+							logger.debug("Finished deleting.");
+						} else {
+							logger.error("Failed to copy file " + file.getName() + " to " + destFolder.getAbsolutePath() + " BECAUSE DESTINATION PATH DOESNT EXIST OR THAT THE COPIED FILE SIZE IS DIFFERENT.");
+						}
+					}
+				} catch (IOException e) {
+					logger.error("Server #" + getPort() + " failed to move file " + file.getName()
 							+ " due to " + e.getClass().getName());
-            }
-        }
-		setSerStatus(serStatus);
+				}
+			}
+			setSerStatus(serStatus);
+		}
     }
 
 	private static Options buildOptions() {
