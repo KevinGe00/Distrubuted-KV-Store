@@ -1,11 +1,8 @@
 package app_kvECS;
 
-import app_kvServer.KVServerChild;
-import app_kvServer.KVServer;
 import ecs.ECSNode;
 import ecs.IECSNode;
 import logger.LogSetup;
-import shared.messages.KVMessage;
 
 import org.apache.commons.cli.*;
 import org.apache.log4j.Level;
@@ -17,11 +14,9 @@ import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -67,6 +62,8 @@ public class ECSClient implements IECSClient {
     private HashMap<BigInteger, IECSNode> hashRing = new HashMap<>();
     //mapping of KVServers (defined by their IP:Port) and the associated range of hash value
     private HashMap<String, List<BigInteger>> metadata = new HashMap<>();
+    //mapping of KVServers (defined by their IP:Port) and the associated range (including the range of the replicas) of hash value
+    private HashMap<String, List<BigInteger>> metadataWithReplicas = new HashMap<>();
     private ArrayList<Thread> clients = new ArrayList<Thread>();
     public ECSClient(String address, int port) {
         this.address = address;
@@ -369,6 +366,7 @@ public class ECSClient implements IECSClient {
             String fullAddress =  serverHost + ":" + serverPort;
             BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
             updateMetadataWithNewNode(fullAddress, position);
+            updateMetadataWithReplicas(fullAddress);
             putEmptyMailbox(fullAddress);
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
@@ -393,6 +391,7 @@ public class ECSClient implements IECSClient {
 
             String removedNodeStoreDir = removeServerNodeFromHashRing(serverHost, serverPort);
             List<BigInteger> removedNodeRange = updateMetadataAfterNodeRemoval(fullAddress);
+            updateMetadataWithReplicas(fullAddress);
 
             rn.success = true;
             rn.storeDir = removedNodeStoreDir;
@@ -495,7 +494,50 @@ public class ECSClient implements IECSClient {
         predecessors.put(fullAddress, fullAddress);
     }
 
+    /**
+     * @param fullAddress IP:port of newly added server
+     */
+    public void updateMetadataWithReplicas(String fullAddress) {
+        // at this point, updateMetadataWithNewNode or updateMetadataAfterNodeRemoval has already run
 
+        if (metadata.size() <= 3) {
+            for (String key : metadata.keySet()) {
+                List<BigInteger> keyrange = metadata.get(key);
+                BigInteger range_start = keyrange.get(0);
+
+                metadataWithReplicas.put(key, Arrays.asList(range_start, range_start.add(BigInteger.ONE)));
+            }
+            return;
+        }
+
+        String predAddr = predecessors.get(fullAddress);
+        String predPredAddr = predecessors.get(predAddr);
+        String predPredPredAddr = predecessors.get(predPredAddr);
+
+        List<BigInteger> newNodeRange = metadata.get(fullAddress);
+
+        List<BigInteger> newNodePredRange = metadata.get(predAddr);
+        List<BigInteger> newNodePredPredRange = metadata.get(predPredAddr);
+        List<BigInteger> newNodePredPredPredRange = metadata.get(predPredPredAddr);
+
+        // set new node's "wide" hashrange
+        metadataWithReplicas.put(fullAddress, Arrays.asList(newNodeRange.get(0), getSuccSuccRangeEnd(fullAddress)));
+
+        // set new node's pred "wide" hashrange
+        metadataWithReplicas.put(predAddr, Arrays.asList(newNodePredRange.get(0), getSuccSuccRangeEnd(predAddr)));
+
+        // set new node's pred pred "wide" hashrange
+        metadataWithReplicas.put(predPredAddr, Arrays.asList(newNodePredPredRange.get(0), getSuccSuccRangeEnd(predPredAddr)));
+
+        // set new node's pred pred pred "wide" hashrange
+        metadataWithReplicas.put(predPredPredAddr, Arrays.asList(newNodePredPredPredRange.get(0), getSuccSuccRangeEnd(predPredPredAddr)));
+    }
+
+    private BigInteger getSuccSuccRangeEnd(String fullAddress) {
+        List<BigInteger> succSuccRange = metadata.get(successors.get(successors.get(fullAddress)));
+        return succSuccRange.get(1);
+
+    }
     // hash string to MD5 bigint
     private BigInteger hash(String fullAddress) {
         try {
