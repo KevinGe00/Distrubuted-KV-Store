@@ -199,91 +199,94 @@ public class ECSClient implements IECSClient {
         return null;
     }
 
+    // Add this lock object as a class member
+    private final Object replicaLock = new Object();
     /**
      * @param serverHost host of node being deleted
      * @param serverPort port of node being deleted
      */
-    public void handleReplicaChangesAfterNodeRemoval(String serverHost, int serverPort) {
-        // DN = node being deleted
-        // At this point, DN's data has already been moved to coord folder of DN's pred
-        // Happens in writeLockProcess of KVServerECS
+    public void handleReplicaChangesAfterNodeRemoval (String serverHost, int serverPort) {
+        synchronized (replicaLock) {
+                // DN = node being deleted
+                // At this point, DN's data has already been moved to coord folder of DN's pred
+                // Happens in writeLockProcess of KVServerECS
+            String fullAddress = serverHost + ":" + serverPort;
+            IECSNode curr = hashRing.get(hash(fullAddress)); // DN
+            IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
+            IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
+            IECSNode pred_pred = hashRing.get(hash(predecessors.get(predecessors.get(fullAddress))));
+            IECSNode succ_succ = hashRing.get(hash(successors.get(successors.get(fullAddress))));
 
-        String fullAddress = serverHost + ":" + serverPort;
-        IECSNode curr = hashRing.get(hash(fullAddress)); // DN
-        IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
-        IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
-        IECSNode pred_pred = hashRing.get(hash(predecessors.get(predecessors.get(fullAddress))));
-        IECSNode succ_succ = hashRing.get(hash(successors.get(successors.get(fullAddress))));
-
-        String succ_dir = getParentPath(succ.getStoreDir());
-        String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
-        String pred_dir = pred.getStoreDir();
-        String pred_pred_dir = pred_pred.getStoreDir();
+            String succ_dir = getParentPath(succ.getStoreDir());
+            String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
+            String pred_dir = pred.getStoreDir();
+            String pred_pred_dir = pred_pred.getStoreDir();
 
 
-        // 1. Copy DN's succ's replica of DN's data into DN's succ's replica of DN's pred
-        copyFolder(succ_dir + File.separator + serverPort, succ_dir + File.separator + pred.getNodePort());
+            // 1. Copy DN's succ's replica of DN's data into DN's succ's replica of DN's pred
+            copyFolder(succ_dir + File.separator + serverPort, succ_dir + File.separator + pred.getNodePort());
 
-        // 2. Delete DN's succ's replica of DN
-        deleteFolder(succ_dir + File.separator + serverPort);
+            // 2. Delete DN's succ's replica of DN
+            deleteFolder(succ_dir + File.separator + serverPort);
 
-        // 3. Delete DN's succ's succ's replica of DN
-        if (curr.getNodePort() != succ_succ.getNodePort()) {
-            deleteFolder(succ_succ_dir + File.separator + serverPort);
+            // 3. Delete DN's succ's succ's replica of DN
+            if (curr.getNodePort() != succ_succ.getNodePort()) {
+                deleteFolder(succ_succ_dir + File.separator + serverPort);
+            }
+
+            // 4. Copy DN's pred pred as a replica in DN's succ
+            if (curr.getNodePort() != pred_pred.getNodePort()) {
+                copyFolder(pred_pred_dir, succ_dir + File.separator + pred_pred.getNodePort());
+            }
+
+            // 5. Copy DN's pred as a replica in DN's succ succ
+            if (curr.getNodePort() != succ_succ.getNodePort()) {
+                copyFolder(pred_dir, succ_succ_dir + File.separator + pred.getNodePort());
+            }
+
+            // 6. Finally, delete the entire folder of DN
+            String curr_dir = getParentPath(curr.getStoreDir());
+            deleteFolder(curr_dir);
+
+            logger.info(fullAddress + " replication deletion completed.");
         }
-
-        // 4. Copy DN's pred pred as a replica in DN's succ
-        if (curr.getNodePort() != pred_pred.getNodePort()) {
-            copyFolder(pred_pred_dir, succ_dir + File.separator + pred_pred.getNodePort());
-        }
-
-        // 5. Copy DN's pred as a replica in DN's succ succ
-        if (curr.getNodePort() != succ_succ.getNodePort()) {
-            copyFolder(pred_dir, succ_succ_dir + File.separator + pred.getNodePort());
-        }
-
-        // 6. Finally, delete the entire folder of DN
-        String curr_dir = getParentPath(curr.getStoreDir());
-        deleteFolder(curr_dir);
-
-        logger.info(fullAddress + " replication deletion completed.");
     }
-
     /**
      * @param fullAddress address:port
      */
-    public void replicateNewServer(String fullAddress){
-        System.out.println("REPLICATE NEW SERVER, FULLADDRESS: " + fullAddress);
-        IECSNode curr = hashRing.get(hash(fullAddress));
+    public void replicateNewServer(String fullAddress) {
+        synchronized (replicaLock){
+            System.out.println("REPLICATE NEW SERVER, FULLADDRESS: " + fullAddress);
+            IECSNode curr = hashRing.get(hash(fullAddress));
 
-        IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
-        IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
-        IECSNode pred_pred = hashRing.get(hash(predecessors.get(predecessors.get(fullAddress))));
-        IECSNode succ_succ = hashRing.get(hash(successors.get(successors.get(fullAddress))));
+            IECSNode pred = hashRing.get(hash(predecessors.get(fullAddress)));
+            IECSNode succ = hashRing.get(hash(successors.get(fullAddress)));
+            IECSNode pred_pred = hashRing.get(hash(predecessors.get(predecessors.get(fullAddress))));
+            IECSNode succ_succ = hashRing.get(hash(successors.get(successors.get(fullAddress))));
 
-        String pred_port = Integer.toString(pred.getNodePort());
-        String pred_pred_port = Integer.toString(pred_pred.getNodePort());
-        String succ_dir = getParentPath(succ.getStoreDir());
-        String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
-        String curr_dir = getParentPath(curr.getStoreDir());
-        logger.debug("curr STORE DIR: " + curr.getStoreDir());
-        logger.debug("Successor of " + fullAddress + " is " + successors.get(fullAddress));
-        logger.debug("Predecessor of " + fullAddress + " is " + predecessors.get(fullAddress));
+            String pred_port = Integer.toString(pred.getNodePort());
+            String pred_pred_port = Integer.toString(pred_pred.getNodePort());
+            String succ_dir = getParentPath(succ.getStoreDir());
+            String succ_succ_dir = getParentPath(succ_succ.getStoreDir());
+            String curr_dir = getParentPath(curr.getStoreDir());
+            logger.debug("curr STORE DIR: " + curr.getStoreDir());
+            logger.debug("Successor of " + fullAddress + " is " + successors.get(fullAddress));
+            logger.debug("Predecessor of " + fullAddress + " is " + predecessors.get(fullAddress));
 
-        logger.debug("Deleting  " + succ_dir + File.separator + pred_port);
-        deleteFolder(succ_dir + File.separator + pred_port);
-        logger.debug("Deleting  " + succ_succ_dir + File.separator + pred_port);
-        deleteFolder(succ_succ_dir + File.separator + pred_port);
-        logger.debug("Deleting  " + succ_dir + File.separator + pred_pred_port);
-        deleteFolder(succ_dir + File.separator +  pred_pred_port);
+            logger.debug("Deleting  " + succ_dir + File.separator + pred_port);
+            deleteFolder(succ_dir + File.separator + pred_port);
+            logger.debug("Deleting  " + succ_succ_dir + File.separator + pred_port);
+            deleteFolder(succ_succ_dir + File.separator + pred_port);
+            logger.debug("Deleting  " + succ_dir + File.separator + pred_pred_port);
+            deleteFolder(succ_dir + File.separator +  pred_pred_port);
 
-        copyFolder(pred_pred.getStoreDir(), curr_dir + File.separator + pred_pred.getNodePort());
-        copyFolder(pred.getStoreDir(), curr_dir + File.separator + pred.getNodePort());
-        copyFolder(pred.getStoreDir(), succ_dir + File.separator + pred.getNodePort());
-        copyFolder(curr.getStoreDir(), succ_dir + File.separator + curr.getNodePort());
-        copyFolder(curr.getStoreDir(), succ_succ_dir + File.separator + curr.getNodePort());
+            copyFolder(pred_pred.getStoreDir(), curr_dir + File.separator + pred_pred.getNodePort());
+            copyFolder(pred.getStoreDir(), curr_dir + File.separator + pred.getNodePort());
+            copyFolder(pred.getStoreDir(), succ_dir + File.separator + pred.getNodePort());
+            copyFolder(curr.getStoreDir(), succ_dir + File.separator + curr.getNodePort());
+            copyFolder(curr.getStoreDir(), succ_succ_dir + File.separator + curr.getNodePort());
+        }
     }
-
 
     public static String getParentPath(String path) {
         int lastForwardSlashIndex = path.lastIndexOf('/');

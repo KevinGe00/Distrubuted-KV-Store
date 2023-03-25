@@ -154,7 +154,6 @@ public class PerformanceTester{
 
             long system_start = System.currentTimeMillis();
             ECSClient ecsClient = new ECSClient("localhost", 33333);
-            new LogSetup("logs/performance/m3.log", Level.toLevel("ERROR"));
             ecsClient.initializeServer();
             ecsClient.run();
 
@@ -193,7 +192,6 @@ public class PerformanceTester{
                 servers[i].setHostname("localhost");
                 servers[i].setBootstrapServer("localhost:33333");
                 servers[i].initializeStore("out" + File.separator + servers[i].getPort() + File.separator + "Coordinator");
-                new LogSetup("logs/performance/m3.log", Level.toLevel("ERROR"));
                 new Thread(servers[i]).start();
             }
 
