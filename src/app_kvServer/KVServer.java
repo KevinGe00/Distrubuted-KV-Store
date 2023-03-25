@@ -199,7 +199,7 @@ public class KVServer extends Thread implements IKVServer {
 					// find the pair for this server
 					rangeFrom_responsible = new BigInteger(rF_rT_ip_port[0], 16);
 					rangeTo_responsible = new BigInteger(rF_rT_ip_port[1], 16);
-					logger.info("metadata keyrange update " + rangeFrom_responsible + "<->" + rangeTo_responsible);
+					logger.info("metadata keyrange update " + rF_rT_ip_port[0] + "<->" + rF_rT_ip_port[1]);
 					return;
 				}
 			}

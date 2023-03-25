@@ -146,10 +146,6 @@ public class KVMessage implements KVMessageInterface{
 		} else {
 			text = ">>> Sending ";
 		}
-		String tmpValue = value;
-		if ((tmpValue != null) && (tmpValue.length() > 10)) {
-			tmpValue = tmpValue.substring(0,9);
-		}
 		logger.debug(text
 					+ "<" + status.name() + "> "
 					+ "<" + key + "> "
