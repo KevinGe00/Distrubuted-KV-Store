@@ -335,6 +335,9 @@ public class ECSClientChild implements Runnable {
             // block until receiving response, exception when socket closed
             logger.debug(PROMPT + "WRITE LOCK sent, waiting for its file transfer.");
             kvMsgRecv = receiveKVMessage();
+            while (kvMsgRecv.getStatus() != StatusType.S2A_FINISHED_FILE_TRANSFER) {
+                kvMsgRecv = receiveKVMessage();
+            }
             logger.debug(PROMPT + "It completed file transfer, removing node.");
         } catch (Exception e) {
             logger.error(PROMPT + "Did not receive response for file transfer. Terminating this thread.", e);
