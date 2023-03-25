@@ -168,6 +168,8 @@ public class ECSClientChild implements Runnable {
         // send a WriteLock mail to predecessor, only if the predecessor is not myself
         thisFullAddress = responseIP + ":" + serverListeningPort;
         String predecessorFullAddress = ptrECSClient.predecessors.get(thisFullAddress);
+        logger.info("thisFullAddress = " + thisFullAddress);
+        logger.info("predecessorFullAddress = " + predecessorFullAddress);
         if (!thisFullAddress.equals(predecessorFullAddress)) {
             // in case that this is the first node, do not send the mail
             Mailbox mailTopredecessor = new Mailbox();
@@ -263,6 +265,8 @@ public class ECSClientChild implements Runnable {
                 String strPort_ServerRecvFile = keyRecv;
                 logger.error("000000000000000");
                 if (!strPort_ServerRecvFile.equals(serverListeningPort)) {
+                    logger.info("strPort_ServerRecvFile = " + strPort_ServerRecvFile);
+                    logger.info("serverListeningPort = " + serverListeningPort);
                     ptrECSClient.replicateNewServer(responseIP + ":" + strPort_ServerRecvFile);
                 }
                 continue;

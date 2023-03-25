@@ -338,7 +338,7 @@ public class ECSClient implements IECSClient {
         if (getParentPath(source).equals(getParentPath(destination))) {
             return;
         }
-        //System.out.println("COPYING FROM " + source + " TO " + destination);
+        System.out.println("COPYING FROM " + source + " TO " + destination);
 
         if (!destinationFolder.exists()) {
             if (destinationFolder.mkdirs()) {
@@ -353,7 +353,7 @@ public class ECSClient implements IECSClient {
             File destinationChild = new File(destinationFolder, child);
             try {
                 Files.copy(sourceChild.toPath(), destinationChild.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                //System.out.println("Copied: " + sourceChild.toPath() + " to " + destinationChild.toPath());
+                System.out.println("Copied: " + sourceChild.toPath() + " to " + destinationChild.toPath());
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -537,52 +537,25 @@ public class ECSClient implements IECSClient {
      */
     public List<BigInteger> updateMetadataAfterNodeRemoval (String fullAddress) {
         if (metadata.containsKey(fullAddress)) {
-            BigInteger nodeToRemoveRangeStart = metadata.get(fullAddress).get(0);
             BigInteger nodeToRemoveRangeEnd = metadata.get(fullAddress).get(1);
 
-            List<Map.Entry<String, List<BigInteger>>> sortedEntries = getSortedMetadata();
-            BigInteger prevStart = BigInteger.ZERO;
-            for (Map.Entry<String, List<BigInteger>> entry : sortedEntries) {
-                String key = entry.getKey();
-                BigInteger rangeStart = entry.getValue().get(0);
-                int comparisonResult = rangeStart.compareTo(nodeToRemoveRangeStart);
-                if (comparisonResult > 0) {
-                    List<BigInteger> removedNodeRange = metadata.get(fullAddress);
-                    metadata.remove(fullAddress);
-                    logger.info(fullAddress + " removed from metadata.");
-                    // extend the range of the successor node to cover removed node range
-                    List<BigInteger> successorRange = entry.getValue();
-                    successorRange.set(1, nodeToRemoveRangeEnd);
-                    metadata.put(key, successorRange);
-                    logger.info("update the range of the successor node " + key + " to " + successorRange);
+            String succAddr = successors.get(fullAddress);
+            String predAddr = predecessors.get(fullAddress);
 
+            List<BigInteger> newPredRange = metadata.get(predAddr);
+            newPredRange.set(1, nodeToRemoveRangeEnd);
+            metadata.put(predAddr, newPredRange);
 
-                    successors.put(key, successors.get(fullAddress));
-                    successors.remove(fullAddress);
+            successors.put(predAddr, succAddr);
+            successors.remove(fullAddress);
 
-                    predecessors.put(successors.get(key), key);
-                    predecessors.remove(fullAddress);
+            predecessors.put(succAddr, predAddr);
+            predecessors.remove(fullAddress);
 
-                    return removedNodeRange;
-                }
-            }
+            metadata.remove(fullAddress);
+            logger.info(fullAddress + " removed from metadata.");
         }
         return null;
-    }
-
-    // return sorted nodes in metadata map by the start of their key-range
-    private List<Map.Entry<String, List<BigInteger>>> getSortedMetadata() {
-        List<Map.Entry<String, List<BigInteger>>> sortedEntries = new ArrayList<>(metadata.entrySet());
-        Collections.sort(sortedEntries, new Comparator<Map.Entry<String, List<BigInteger>>>() {
-            @Override
-            public int compare(Map.Entry<String, List<BigInteger>> e1, Map.Entry<String, List<BigInteger>> e2) {
-                BigInteger first1 = e1.getValue().get(0);
-                BigInteger first2 = e2.getValue().get(0);
-                return first1.compareTo(first2);
-            }
-        });
-
-        return sortedEntries;
     }
 
     /**
