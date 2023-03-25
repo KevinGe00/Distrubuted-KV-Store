@@ -509,7 +509,6 @@ public class ECSClient implements IECSClient {
                 BigInteger range_start = keyrange.get(0);
 
                 metadataWithReplicas.put(key, Arrays.asList(range_start, range_start.add(BigInteger.ONE)));
-                logger.info("put in mdr " + key + " to " + Arrays.asList(range_start, range_start.add(BigInteger.ONE)));
             }
 
             if (removing) {
