@@ -73,9 +73,6 @@ public class ECSClient implements IECSClient {
     public ConcurrentHashMap<String, List<BigInteger>> getMetadata() {
         return metadata;
     }
-    public ConcurrentHashMap<String, List<BigInteger>> getMetadataRead() {
-        return metadataWithReplicas;
-    }
 
     public boolean getRunning(){
         return running;
@@ -370,7 +367,7 @@ public class ECSClient implements IECSClient {
             String fullAddress =  serverHost + ":" + serverPort;
             BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
             updateMetadataWithNewNode(fullAddress, position);
-            updateMetadataWithReplicas(fullAddress);
+            updateMetadataWithReplicas(fullAddress, false);
             putEmptyMailbox(fullAddress);
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
@@ -395,7 +392,7 @@ public class ECSClient implements IECSClient {
 
             String removedNodeStoreDir = removeServerNodeFromHashRing(serverHost, serverPort);
             List<BigInteger> removedNodeRange = updateMetadataAfterNodeRemoval(fullAddress);
-            updateMetadataWithReplicas(fullAddress);
+            updateMetadataWithReplicas(fullAddress, true);
 
             rn.success = true;
             rn.storeDir = removedNodeStoreDir;
@@ -500,8 +497,9 @@ public class ECSClient implements IECSClient {
 
     /**
      * @param fullAddress IP:port of newly added server
+     * @param fullAddress IP:port of newly added server
      */
-    public void updateMetadataWithReplicas(String fullAddress) {
+    public void updateMetadataWithReplicas(String fullAddress, boolean removing) {
         // at this point, updateMetadataWithNewNode or updateMetadataAfterNodeRemoval has already run
 
         if (metadata.size() <= 3) {
@@ -511,6 +509,10 @@ public class ECSClient implements IECSClient {
                 BigInteger range_start = keyrange.get(0);
 
                 metadataWithReplicas.put(key, Arrays.asList(range_start, range_start.add(BigInteger.ONE)));
+            }
+
+            if (removing) {
+                metadataWithReplicas.remove(fullAddress);
             }
             return;
         }
@@ -537,6 +539,10 @@ public class ECSClient implements IECSClient {
 
         // set new node's pred pred pred "wide" hashrange
         metadataWithReplicas.put(predPredPredAddr, Arrays.asList(newNodePredPredPredRange.get(0), getSuccSuccRangeEnd(predPredPredAddr)));
+
+        if (removing) {
+            metadataWithReplicas.remove(fullAddress);
+        }
     }
 
     private BigInteger getSuccSuccRangeEnd(String fullAddress) {
