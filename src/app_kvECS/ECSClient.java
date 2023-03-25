@@ -509,6 +509,7 @@ public class ECSClient implements IECSClient {
                 BigInteger range_start = keyrange.get(0);
 
                 metadataWithReplicas.put(key, Arrays.asList(range_start, range_start.add(BigInteger.ONE)));
+                logger.info("put in mdr " + key + " to " + Arrays.asList(range_start, range_start.add(BigInteger.ONE)));
             }
 
             if (removing) {
@@ -516,38 +517,38 @@ public class ECSClient implements IECSClient {
             }
             return;
         }
+        BigInteger newNodeRangeEnd = metadata.get(fullAddress).get(1);
 
-        // changes are only propagated to as far as 3 consecutive pred back
+        String succAddr = successors.get(fullAddress);
+        String succSuccAddr = successors.get(succAddr);
+        BigInteger newNodeSuccRangeEnd = metadata.get(succAddr).get(1);
+        BigInteger newNodeSuccSuccRangeEnd = metadata.get(succSuccAddr).get(1);
+
         String predAddr = predecessors.get(fullAddress);
-        String predPredAddr = predecessors.get(predAddr);
-        String predPredPredAddr = predecessors.get(predPredAddr);
+        BigInteger newNodePredRangeEnd = metadata.get(predAddr).get(1);
 
-        List<BigInteger> newNodeRange = metadata.get(fullAddress);
-
-        List<BigInteger> newNodePredRange = metadata.get(predAddr);
-        List<BigInteger> newNodePredPredRange = metadata.get(predPredAddr);
-        List<BigInteger> newNodePredPredPredRange = metadata.get(predPredPredAddr);
+        // "wide" hashrange includes servers own coordinator range plus the range that it's 2 predecessors cover
 
         // set new node's "wide" hashrange
-        metadataWithReplicas.put(fullAddress, Arrays.asList(newNodeRange.get(0), getSuccSuccRangeEnd(fullAddress)));
+        metadataWithReplicas.put(fullAddress, Arrays.asList(getPredPredRangeStart(fullAddress), newNodeRangeEnd));
 
         // set new node's pred "wide" hashrange
-        metadataWithReplicas.put(predAddr, Arrays.asList(newNodePredRange.get(0), getSuccSuccRangeEnd(predAddr)));
+        metadataWithReplicas.put(predAddr, Arrays.asList(getPredPredRangeStart(predAddr), newNodePredRangeEnd));
 
-        // set new node's pred pred "wide" hashrange
-        metadataWithReplicas.put(predPredAddr, Arrays.asList(newNodePredPredRange.get(0), getSuccSuccRangeEnd(predPredAddr)));
+        // set new node's succ "wide" hashrange
+        metadataWithReplicas.put(succAddr, Arrays.asList(getPredPredRangeStart(succAddr), newNodeSuccRangeEnd));
 
-        // set new node's pred pred pred "wide" hashrange
-        metadataWithReplicas.put(predPredPredAddr, Arrays.asList(newNodePredPredPredRange.get(0), getSuccSuccRangeEnd(predPredPredAddr)));
+        // set new node's succ succ "wide" hashrange
+        metadataWithReplicas.put(succSuccAddr, Arrays.asList(getPredPredRangeStart(succSuccAddr), newNodeSuccSuccRangeEnd));
 
         if (removing) {
             metadataWithReplicas.remove(fullAddress);
         }
     }
 
-    private BigInteger getSuccSuccRangeEnd(String fullAddress) {
-        List<BigInteger> succSuccRange = metadata.get(successors.get(successors.get(fullAddress)));
-        return succSuccRange.get(1);
+    private BigInteger getPredPredRangeStart(String fullAddress) {
+        List<BigInteger> predPredRangeStart = metadata.get(predecessors.get(predecessors.get(fullAddress)));
+        return predPredRangeStart.get(0);
 
     }
     // hash string to MD5 bigint
