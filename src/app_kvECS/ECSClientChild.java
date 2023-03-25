@@ -51,7 +51,8 @@ public class ECSClientChild implements Runnable {
         responsePort = responseSocket.getPort();
         this.ptrECSClient = ptrECSClient;
         ecsPort = ptrECSClient.getPort();
-        cacheMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata());
+        cacheMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata()) + "|"
+                        + convertMetaHashmapToString(ptrECSClient.getMetadataRead());
         PROMPT = "[To #<NOT INITIALIZED YET>] >>> ";
     }
 
@@ -156,7 +157,8 @@ public class ECSClientChild implements Runnable {
             close();
             return;
         }    
-        cacheMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata());
+        cacheMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata()) + "|"
+                        + convertMetaHashmapToString(ptrECSClient.getMetadataRead());
         // response server's init request with response (+ metadata)
         KVMessage kvMsgSend = new KVMessage();
         kvMsgSend.setStatus(StatusType.E2S_INIT_RESPONSE_WITH_META);
@@ -212,7 +214,8 @@ public class ECSClientChild implements Runnable {
 
             kvMsgSend = null;
 
-            String latestMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata());
+            String latestMetadata = convertMetaHashmapToString(ptrECSClient.getMetadata()) + "|"
+                                    + convertMetaHashmapToString(ptrECSClient.getMetadataRead());
             Mailbox mail = ptrECSClient.childMailboxs.get(thisFullAddress);
             if (mail.needsToSendWriteLock) {
                 // check Write Lock request first, clear mail as well

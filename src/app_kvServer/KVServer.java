@@ -36,6 +36,13 @@ public class KVServer extends Thread implements IKVServer {
 		public Thread childThread = null;
 		public Socket childSocket = null;
 	}
+	class Replica {
+		public int port;
+		public String dirStore;
+		public Store store;
+		public BigInteger rangeFrom_Replica;
+		public BigInteger rangeTo_Replica;
+	}
 
 	private static Logger logger = Logger.getRootLogger();
 
@@ -51,8 +58,12 @@ public class KVServer extends Thread implements IKVServer {
 	private ServerSocket serverSocket;
 	// latest server metadata
     private String metadata;
-	private BigInteger rangeFrom_responsible;
-	private BigInteger rangeTo_responsible;
+	private BigInteger rangeFrom_Coordinator;
+	private BigInteger rangeTo_Coordinator;
+	// latest server metadata_read
+	private String metadata_read;
+	private BigInteger rangeFrom_AllReplicas;
+	private BigInteger rangeTo_AllReplicas;
 
 	/**
 	 * Initialize a new, stopped KVServer at port
@@ -69,8 +80,9 @@ public class KVServer extends Thread implements IKVServer {
 		ECSObject = null;
 		serverSocket = null;
 		metadata = null;
-		rangeFrom_responsible = null;
-		rangeTo_responsible = null;
+		rangeFrom_Coordinator = null;
+		rangeTo_Coordinator = null;
+		metadata_read = null;
 	}
 	public KVServer(int port, int cacheSize, String strategy) {
 		status = SerStatus.STOPPED;
@@ -83,31 +95,33 @@ public class KVServer extends Thread implements IKVServer {
 		ECSObject = null;
 		serverSocket = null;
 		metadata = null;
-		rangeFrom_responsible = null;
-		rangeTo_responsible = null;
+		rangeFrom_Coordinator = null;
+		rangeTo_Coordinator = null;
+		metadata_read = null;
 	}
 
 	/* Server metadata */
 	/**
 	 * Set server's metadata, will update the hasmap metadata as well
-	 * @param metatdata metadata from ECS server
+	 * @param metadata metadata from ECS server
 	 * @return true for success, false otherwise
 	 */
-	public synchronized boolean setMetadata(String metatdata) {
-		if (metatdata == null) {
-			logger.error("Must not set metadata to null for server #"
-						+ getPort());
+	public synchronized boolean setMetadata(String metadata) {
+		if (metadata == null) {
+			logger.error(">>> Cannot set metadata to null.");
 			return false;
 		}
-		this.metadata = metatdata;
-		logger.debug("Server #" + getPort() + " has updated it keyrange"
-					+ " metadata.");
+		String[] strs_metadata = metadata.split("\\|");
+		this.metadata = strs_metadata[0];
+		this.metadata_read = strs_metadata[1];
+		logger.debug(">>> Server #" + port + " has updated its String metadata and metadata_read.");
 		try {
-			updateBoundResponsible(metatdata, port);
-			logger.debug("Server #" + getPort() + "'s new range_from: <"
-						+ rangeFrom_responsible.toString(16)
-						+ "> \tnew range_to: <"
-						+ rangeTo_responsible.toString(16) + ">");
+			updateBoundMetadataAny(true);
+			logger.debug(">>> Coordinator:  " + rangeFrom_Coordinator.toString(16) + " <-> "
+						+ rangeTo_Coordinator.toString(16));
+			updateBoundMetadataAny(false);
+			logger.debug(">>> Replicas: \t " + rangeFrom_AllReplicas.toString(16) + " <-> "
+						+ rangeTo_AllReplicas.toString(16));
 		} catch (Exception e) {
 			logger.error("Unable to update keyrange bound for server #"
 						+ getPort() + ".", e);
@@ -123,13 +137,29 @@ public class KVServer extends Thread implements IKVServer {
 		return metadata;
 	}
 	/**
-	 * Check if the server is responsible for this key
-	 * @param key a String key
-	 * @return true for responsible, false otherwise and need to send SERVER_NOT_RESPONSIBLE
+	 * Get server's latest metadata_read.
+	 * @return
 	 */
-	public boolean isResponsibleToKey(String key) {
+	public String getMetadataRead() {
+		return metadata_read;
+	}
+	/**
+	 * Check if the server is Coordinator for this key
+	 * @param key a String key
+	 * @return true for Coordinator, false otherwise and need to send SERVER_NOT_RESPONSIBLE
+	 */
+	public boolean isCoordinatorForKey(String key) {
 		BigInteger hashedKey = hash(key);
-		return isBounded(hashedKey, rangeFrom_responsible, rangeTo_responsible);
+		return isBounded(hashedKey, rangeFrom_Coordinator, rangeTo_Coordinator);
+	}
+	/**
+	 * Check if the server is any Replica for this key
+	 * @param key a String key
+	 * @return true for Replica, false otherwise and need to send SERVER_NOT_RESPONSIBLE
+	 */
+	public boolean isReplicaForKey(String key) {
+		BigInteger hashedKey = hash(key);
+		return isBounded(hashedKey, rangeFrom_AllReplicas, rangeTo_AllReplicas);
 	}
 	// hash string to MD5 bigint
     private BigInteger hash(String s) {
@@ -173,37 +203,40 @@ public class KVServer extends Thread implements IKVServer {
         return bounded;
     }
 	/**
-     * Update rangeFrom_responsible and rangeTo_responsible with string metadata.
-     * @param str a String keyrange metadata from ECS
+     * Update rangeFrom_responsible(_read) and rangeTo_responsible(_read) with current metadata(_read).
+     * @param trueForCoord_falseForReplc true for coordinator update, false for replicas update
      */
-    public synchronized void updateBoundResponsible(String str, int responsePort) throws Exception {
-        if ((str == null) || ("".equals(str))) {
-            return;
-        }
-		// check if this regular metadata update or write lock keyrange update
+    public synchronized void updateBoundMetadataAny(boolean trueForCoord_falseForReplc) throws Exception {
+		String str;
+		if (trueForCoord_falseForReplc) {
+			str = metadata;
+		} else {
+			str = metadata_read;
+		}
 		String[] semicolonSeperatedStrs = str.split(";");
 		String[] commaSeperatedStrs = semicolonSeperatedStrs[0].split(",");
-		if (commaSeperatedStrs.length == 5) {
-			// write lock keyrange update
-			// -> Directory_FileToHere,NewBigInt_from,NewBigInt_to,IP,port
-			rangeFrom_responsible = new BigInteger(commaSeperatedStrs[1], 16);
-			rangeTo_responsible = new BigInteger(commaSeperatedStrs[2], 16);
-			logger.info("WL keyrange update." + rangeFrom_responsible + "<->" + rangeTo_responsible);
-		} else if (commaSeperatedStrs.length == 4) {
-			// regular metadata update
+		if (commaSeperatedStrs.length == 4) {
 			// -> range_from,range_to,ip,port;...;range_from,range_to,ip,port
 			for (String pair : semicolonSeperatedStrs) {
 				// range_from,range_to,ip,port
 				String[] rF_rT_ip_port = pair.split(",");
-				if (Integer.parseInt(rF_rT_ip_port[3]) == responsePort) {
+				if (Integer.parseInt(rF_rT_ip_port[3]) == port) {
 					// find the pair for this server
-					rangeFrom_responsible = new BigInteger(rF_rT_ip_port[0], 16);
-					rangeTo_responsible = new BigInteger(rF_rT_ip_port[1], 16);
-					logger.info("metadata keyrange update " + rF_rT_ip_port[0] + "<->" + rF_rT_ip_port[1]);
+					if (trueForCoord_falseForReplc) {
+						rangeFrom_Coordinator = new BigInteger(rF_rT_ip_port[0], 16);
+						rangeTo_Coordinator = new BigInteger(rF_rT_ip_port[1], 16);
+					} else {
+						rangeFrom_AllReplicas = new BigInteger(rF_rT_ip_port[0], 16);
+						rangeTo_AllReplicas = new BigInteger(rF_rT_ip_port[1], 16);
+					}
 					return;
 				}
 			}
+			logger.error(">>> Server #" + port + " cannot be found in metadata/_read.");
+		} else {
+			logger.error(">>> Unexpected metadata/_read format: " + str);
 		}
+		setSerStatus(SerStatus.SHUTTING_DOWN);
 		return;
     }
 

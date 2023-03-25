@@ -151,7 +151,7 @@ public class KVServerChild implements Runnable {
 					ptrKVServer.setSerStatus(SerStatus.STOPPED);
 				}
 				try {
-					Thread.sleep(1000);
+					Thread.sleep(200);
 				} catch (InterruptedException e) {
 					throw new RuntimeException(e);
 				}
@@ -225,14 +225,28 @@ public class KVServerChild implements Runnable {
 			}
 
 			// 2. server not responsible
-			if ((statusRecv == StatusType.PUT)
-				|| (statusRecv == StatusType.GET)) {
-				if (!ptrKVServer.isResponsibleToKey(keyRecv)) {
+			if (statusRecv == StatusType.PUT) {
+				if (!ptrKVServer.isCoordinatorForKey(keyRecv)) {
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setValue(ptrKVServer.getMetadata());
 					/*
-					 * This server is not responsible for this key,
+					 * This server is not Coordinator for PUT this key,
 					 * reply with latest metadata.
+					 */
+					kvMsgSend.setStatus(StatusType.SERVER_NOT_RESPONSIBLE);
+					if (!sendKVMessage(kvMsgSend)) {
+						close();
+						return;
+					}
+					continue;
+				}
+			} else if (statusRecv == StatusType.GET) {
+				if (!ptrKVServer.isReplicaForKey(keyRecv)) {
+					KVMessage kvMsgSend = new KVMessage();
+					kvMsgSend.setValue(ptrKVServer.getMetadataRead());
+					/*
+					 * This server is not Replica for GET this key,
+					 * reply with latest metadata_read.
 					 */
 					kvMsgSend.setStatus(StatusType.SERVER_NOT_RESPONSIBLE);
 					if (!sendKVMessage(kvMsgSend)) {
