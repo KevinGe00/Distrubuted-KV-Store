@@ -547,8 +547,8 @@ public class ECSClient implements IECSClient {
     }
 
     private BigInteger getPredPredRangeStart(String fullAddress) {
-        List<BigInteger> predPredRangeStart = metadata.get(predecessors.get(predecessors.get(fullAddress)));
-        return predPredRangeStart.get(0);
+        List<BigInteger> predPredRange = metadata.get(predecessors.get(predecessors.get(fullAddress)));
+        return predPredRange.get(0);
 
     }
     // hash string to MD5 bigint
