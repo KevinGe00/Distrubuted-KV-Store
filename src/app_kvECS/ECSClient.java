@@ -21,6 +21,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ECSClient implements IECSClient {
     /**
@@ -50,26 +51,26 @@ public class ECSClient implements IECSClient {
     private boolean running = true;
     private ServerSocket serverSocket;
     private BufferedReader stdin;
-    public HashMap<String, ChildObject> childObjects;
-    public HashMap<String, String> successors;
-    public HashMap<String, String> predecessors;
-    public HashMap<String, Mailbox> childMailboxs;
+    public ConcurrentHashMap<String, ChildObject> childObjects;
+    public ConcurrentHashMap<String, String> successors;
+    public ConcurrentHashMap<String, String> predecessors;
+    public ConcurrentHashMap<String, Mailbox> childMailboxs;
 
-    public HashMap<BigInteger, IECSNode> getHashRing() {
+    public ConcurrentHashMap<BigInteger, IECSNode> getHashRing() {
         return hashRing;
     }
 
-    private HashMap<BigInteger, IECSNode> hashRing = new HashMap<>();
+    private ConcurrentHashMap<BigInteger, IECSNode> hashRing = new ConcurrentHashMap<>();
     //mapping of KVServers (defined by their IP:Port) and the associated range of hash value
-    private HashMap<String, List<BigInteger>> metadata = new HashMap<>();
+    private ConcurrentHashMap<String, List<BigInteger>> metadata = new ConcurrentHashMap<>();
     //mapping of KVServers (defined by their IP:Port) and the associated range (including the range of the replicas) of hash value
-    private HashMap<String, List<BigInteger>> metadataWithReplicas = new HashMap<>();
+    private ConcurrentHashMap<String, List<BigInteger>> metadataWithReplicas = new ConcurrentHashMap<>();
     private ArrayList<Thread> clients = new ArrayList<Thread>();
     public ECSClient(String address, int port) {
         this.address = address;
         this.port = port;
     }
-    public HashMap<String, List<BigInteger>> getMetadata() {
+    public ConcurrentHashMap<String, List<BigInteger>> getMetadata() {
         return metadata;
     }
 
@@ -77,11 +78,11 @@ public class ECSClient implements IECSClient {
         return running;
     }
     /* Port */
-    public HashMap<String, String> getSuccessors(){
+    public ConcurrentHashMap<String, String> getSuccessors(){
         return successors;
     }
 
-    public HashMap<String, String> getPredecessors(){
+    public ConcurrentHashMap<String, String> getPredecessors(){
         return predecessors;
     }
     public int getPort(){
@@ -112,12 +113,12 @@ public class ECSClient implements IECSClient {
         }
 
         // initialize client object(thread + socket) arraylist
-        childObjects = new HashMap<>();
+        childObjects = new ConcurrentHashMap<>();
 
-        successors = new HashMap<>();
-        predecessors = new HashMap<>();
+        successors = new ConcurrentHashMap<>();
+        predecessors = new ConcurrentHashMap<>();
 
-        childMailboxs = new HashMap<>();
+        childMailboxs = new ConcurrentHashMap<>();
     }
 
     /*

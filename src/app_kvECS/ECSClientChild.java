@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import shared.messages.KVMessageInterface.StatusType;
 
@@ -56,7 +57,7 @@ public class ECSClientChild implements Runnable {
 
 
     // convert metadata hashmap to form: range_from,range_to,ip,port;...;range_from,range_to,ip,port
-    private String convertMetaHashmapToString(HashMap<String, List<BigInteger>> metaHashmap) {
+    private String convertMetaHashmapToString(ConcurrentHashMap<String, List<BigInteger>> metaHashmap) {
         String value = "";
         for (Map.Entry<String, List<BigInteger>> entry : metaHashmap.entrySet()) {
             if (value != "") {
@@ -78,8 +79,8 @@ public class ECSClientChild implements Runnable {
         return range_from+","+range_to+","+ip+","+port;
     }
     // convert string: "range_from,range_to,ip,port;...;range_from,range_to,ip,port" to metadata hashmap
-    private HashMap<String, List<BigInteger>> convertStringToMetaHashmap(String str) {
-        HashMap<String, List<BigInteger>> metaHashmap = new HashMap<>();
+    private ConcurrentHashMap<String, List<BigInteger>> convertStringToMetaHashmap(String str) {
+        ConcurrentHashMap<String, List<BigInteger>> metaHashmap = new ConcurrentHashMap<>();
         String[] subStrs = str.split(";");
         for (String subStr : subStrs) {
             String[] rFrom_rTo_ip_port = subStr.split(",");
