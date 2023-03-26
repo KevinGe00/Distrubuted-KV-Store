@@ -110,6 +110,7 @@ public class ECSClientChild implements Runnable {
                     + ecsPort+ " connected to IP: '"+ responseIP + "' \t R-port: "
                     + responsePort, e);
             close();
+            return;
         }
 
         // After a new server has established a connection with the ECS we need to
@@ -207,8 +208,7 @@ public class ECSClientChild implements Runnable {
                     Thread.sleep(100);
                     needsSleep = false;
                 } catch (Exception e) {
-                    close();
-                    return;
+                    break;
                 }
             }
 
@@ -239,8 +239,7 @@ public class ECSClientChild implements Runnable {
 
             // send the message
             if (!sendKVMessage(kvMsgSend)) {
-                close();
-                return;
+                break;
             }
 
             // === receive message ===
@@ -252,8 +251,7 @@ public class ECSClientChild implements Runnable {
                 logger.error("Exception when receiving message at ECS #"
                         + ecsPort+ " connected to IP: '"+ responseIP + "' \t L-port: "
                         + serverListeningPort + ".", e);
-                close();
-                return;
+                break;
             }
             statusRecv = kvMsgRecv.getStatus();
             keyRecv = kvMsgRecv.getKey();
@@ -267,7 +265,6 @@ public class ECSClientChild implements Runnable {
                  * After receiving this, in next iteration, a Metadate Update should be sent
                  */
                 String strPort_ServerRecvFile = keyRecv;
-                logger.error("000000000000000");
                 if (!strPort_ServerRecvFile.equals(serverListeningPort)) {
                     logger.info("strPort_ServerRecvFile = " + strPort_ServerRecvFile);
                     logger.info("serverListeningPort = " + serverListeningPort);
@@ -278,9 +275,18 @@ public class ECSClientChild implements Runnable {
             
             if (statusRecv == StatusType.S2E_SHUTDOWN_REQUEST) {
                 shutdownProcess();  // this should close the socket and exit
-                return;
+                break;
             }
         }
+
+        // remove node finally
+        ECSClient.RemovedNode removedNode =  ptrECSClient.removeNode(responseIP, serverListeningPort);
+        if (!removedNode.success) {
+            logger.error(PROMPT + "Fail to remove Node. Terminating this thread.");
+        }
+        logger.debug(PROMPT + "Completed full shutdown process. Exiting this Thread.");
+        close();
+        return;
     }
 
     private void shutdownProcess() {
@@ -346,18 +352,12 @@ public class ECSClientChild implements Runnable {
         } catch (Exception e) {
             logger.error(PROMPT + "Did not receive response for file transfer. Terminating this thread.", e);
         }
+        return;
 
         // 2. Remove corresponding node from hashring
         // 3. Recalculate and update the meta-data
         // 4. Send a meta-data update to the predecessor node
-        ECSClient.RemovedNode removedNode =  ptrECSClient.removeNode(responseIP, serverListeningPort);
-        if (!removedNode.success) {
-            logger.error(PROMPT + "Fail to remove Node. Terminating this thread.");
-        }
-
-        logger.debug(PROMPT + "Completed full shutdown process. Exiting this Thread.");
-        close();
-        return;
+        // --> moved to outside the loop
     }
 
     // hash string to MD5 bigint
