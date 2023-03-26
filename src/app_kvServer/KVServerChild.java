@@ -131,7 +131,7 @@ public class KVServerChild implements Runnable {
 					continue;
 				}
 				KVMessage kvMsgSend = new KVMessage();
-				kvMsgSend.setValue(ptrKVServer.getMetadata());
+				kvMsgSend.setValue(ptrKVServer.getMetadataRead());
 				/*
 				 * Client commands 'keyrange', server is not stopped or shutting down,
 				 * reply with 'keyrange success' and latest server metadata
@@ -294,8 +294,7 @@ public class KVServerChild implements Runnable {
 								repStore.update(keyRecv, valueRecv);
 								logger.debug("[To Client] >>> Propagate-update '" + keyRecv + "'");
 							}
-							found = true;
-							break;
+							found = found || true;
 						}
 					}
 					if (!found) {
@@ -322,16 +321,18 @@ public class KVServerChild implements Runnable {
 								/* DELETE */
 								if (repStore.containsKey(keyRecv)) {
 									repStore.delete(keyRecv);
+									logger.debug("[To Client] >>> Propagate-deleted '" + keyRecv + "'");
 								}
 							} else if (!repStore.containsKey(keyRecv)) {
 								/* PUT */
 								repStore.put(keyRecv, valueRecv);
+								logger.debug("[To Client] >>> Propagate-put '" + keyRecv + "'");
 							} else {
 								/* UPDATE */
 								repStore.update(keyRecv, valueRecv);
+								logger.debug("[To Client] >>> Propagate-update '" + keyRecv + "'");
 							}
-							found = true;
-							break;
+							found = found || true;
 						}
 					}
 					if (!found) {
@@ -351,45 +352,118 @@ public class KVServerChild implements Runnable {
 				case GET: {
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setKey(keyRecv);
-					if (!ptrKVServer.inStorage(keyRecv)) {
-						/*
-						 * Key does not exist in storage,
-						 * reply GET with 'get error' and Key
-						 */
-						kvMsgSend.setStatus(StatusType.GET_ERROR);
-						if (!sendKVMessage(kvMsgSend, output)) {
-							close();
-							return;
+					if (ptrKVServer.isCoordinatorForKey(keyRecv)) {
+						/* found in Coordinator */
+						if (!ptrKVServer.inStorage(keyRecv)) {
+							/*
+							* Key does not exist in storage,
+							* reply GET with 'get error' and Key
+							*/
+							kvMsgSend.setStatus(StatusType.GET_ERROR);
+							if (!sendKVMessage(kvMsgSend, output)) {
+								close();
+								return;
+							}
+							continue;
 						}
-						continue;
-					}
-					try {
-						String valueSend = ptrKVServer.getKV(keyRecv);
-						kvMsgSend.setValue(valueSend);
-						/*
-						 * Value found,
-						 * reply GET with 'get success' and Key-Value pair
-						 */
-						kvMsgSend.setStatus(StatusType.GET_SUCCESS);
-						if (!sendKVMessage(kvMsgSend, output)) {
-							close();
-							return;
+						try {
+							String valueSend = ptrKVServer.getKV(keyRecv);
+							kvMsgSend.setValue(valueSend);
+							/*
+							* Value found,
+							* reply GET with 'get success' and Key-Value pair
+							*/
+							kvMsgSend.setStatus(StatusType.GET_SUCCESS);
+							if (!sendKVMessage(kvMsgSend, output)) {
+								close();
+								return;
+							}
+							continue;
+						} catch (Exception e) {
+							/*
+							* GET processing error,
+							* reply with 'get error' and Key
+							*/
+							logger.error("GET processing error at child of server #"
+										+ serverPort+ " connected to IP: '"
+										+ responseIP + "' \t port: "+ responsePort, e);
+							kvMsgSend.setStatus(StatusType.GET_ERROR);
+							if (!sendKVMessage(kvMsgSend, output)) {
+								close();
+								return;
+							}
+							continue;
 						}
-						continue;
-					} catch (Exception e) {
-						/*
-						 * GET processing error,
-						 * reply with 'get error' and Key
-						 */
-						logger.error("GET processing error at child of server #"
-									+ serverPort+ " connected to IP: '"
-									+ responseIP + "' \t port: "+ responsePort, e);
-						kvMsgSend.setStatus(StatusType.GET_ERROR);
-						if (!sendKVMessage(kvMsgSend, output)) {
-							close();
-							return;
+					} else {
+						/* need to search in replicas */
+						BigInteger hashedKey = hash(keyRecv);
+						try {
+							ConcurrentHashMap<Integer,Replica> replicas = ptrKVServer.getReplicas();
+							boolean found = false;
+							String value = null;
+							for (Map.Entry<Integer, Replica> entry : replicas.entrySet()) {
+								if (isBounded(hashedKey,
+											entry.getValue().rangeFrom_Replica,
+											entry.getValue().rangeTo_Replica)) {
+									Store repStore = entry.getValue().store;
+									String valueTmp = repStore.get(keyRecv);
+									if (value == null) {
+										found = found || false;
+										continue;
+									}
+									found = found || true;
+									value = valueTmp;
+									continue;
+								}
+							}
+							if (!found) {
+								replicas = null;
+								logger.debug("[To Client] >>> Cannot find Replica for GET, "
+											+ "Re-initializing Replicas store...");
+								SerStatus serStatus_Copy = serStatus;
+								ptrKVServer.setSerStatus(SerStatus.STOPPED);
+								ptrKVServer.reInitializeAllReplicasStore();
+								ptrKVServer.setSerStatus(serStatus);
+								logger.debug("[To Client] >>> Replica re-initialization done. Retrying.");
+								replicas = ptrKVServer.getReplicas();
+								found = false;
+								for (Map.Entry<Integer, Replica> entry : replicas.entrySet()) {
+									if (isBounded(hashedKey,
+												entry.getValue().rangeFrom_Replica,
+												entry.getValue().rangeTo_Replica)) {
+										Store repStore = entry.getValue().store;
+										String valueTmp = repStore.get(keyRecv);
+										if (value == null) {
+											found = found || false;
+											continue;
+										}
+										found = found || true;
+										value = valueTmp;
+										continue;
+									}
+								}
+							}
+							kvMsgSend.setValue(value);
+							if (value == null) {
+								kvMsgSend.setStatus(StatusType.GET_ERROR);
+							} else {
+								kvMsgSend.setStatus(StatusType.GET_SUCCESS);
+							}
+							if (!sendKVMessage(kvMsgSend, output)) {
+								close();
+								return;
+							}
+							continue;
+						} catch (Exception e) {
+							logger.error("[To Client] >>> Exception during GET in Replicas.", e);
+							kvMsgSend = new KVMessage();
+							kvMsgSend.setStatus(StatusType.GET_ERROR);
+							kvMsgSend.setKey(keyRecv);
+							if (!sendKVMessage(kvMsgSend, output)) {
+								close();
+								return;
+							}
 						}
-						continue;
 					}
 				}
 				case PUT: {
