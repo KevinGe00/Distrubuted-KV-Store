@@ -283,9 +283,10 @@ public class KVServerChild implements Runnable {
 						Map.Entry<Integer,Replica> entry = iter.next();
 						thisReplica = entry.getValue();
 						/* first, check if any replica is outdated, if so delete them */
-						if ((isBounded(thisReplica.rangeFrom_Replica,
-									   ptrKVServer.rangeFrom_Coordinator,
-									   ptrKVServer.rangeTo_Coordinator))
+						if ((!ptrKVServer.getMetadata().contains(thisReplica.port+""))
+							|| (isBounded(thisReplica.rangeFrom_Replica,
+									      ptrKVServer.rangeFrom_Coordinator,
+									      ptrKVServer.rangeTo_Coordinator))
 							|| (!isBounded(thisReplica.rangeFrom_Replica,
 										   ptrKVServer.rangeFrom_AllReplicas,
 										   ptrKVServer.rangeTo_AllReplicas))) {
@@ -308,7 +309,7 @@ public class KVServerChild implements Runnable {
 							iter.remove();
 							continue;
 						}
-						
+
 						if (isBounded(hashedKey,
 									  thisReplica.rangeFrom_Replica,
 									  thisReplica.rangeTo_Replica)) {
@@ -318,17 +319,21 @@ public class KVServerChild implements Runnable {
 								if (repStore.containsKey(keyRecv)) {
 									repStore.delete(keyRecv);
 									logger.debug("[To Client] >>> Propagate-deleted '" + keyRecv + "'");
+									found = found || true;
+								} else {
+									found = found || false;
 								}
 							} else if (!repStore.containsKey(keyRecv)) {
 								/* PUT */
 								repStore.put(keyRecv, valueRecv);
 								logger.debug("[To Client] >>> Propagate-put '" + keyRecv + "'");
+								found = found || true;
 							} else {
 								/* UPDATE */
 								repStore.update(keyRecv, valueRecv);
 								logger.debug("[To Client] >>> Propagate-update '" + keyRecv + "'");
+								found = found || true;
 							}
-							found = found || true;
 						}
 					}
 					if (!found) {
@@ -475,9 +480,10 @@ public class KVServerChild implements Runnable {
 								Map.Entry<Integer,Replica> entry = iter.next();
 								thisReplica = entry.getValue();
 								/* first, check if any replica is outdated, if so delete them */
-								if ((isBounded(thisReplica.rangeFrom_Replica,
-											   ptrKVServer.rangeFrom_Coordinator,
-											   ptrKVServer.rangeTo_Coordinator))
+								if ((!ptrKVServer.getMetadata().contains(thisReplica.port+""))
+									|| (isBounded(thisReplica.rangeFrom_Replica,
+										 	      ptrKVServer.rangeFrom_Coordinator,
+											      ptrKVServer.rangeTo_Coordinator))
 									|| (!isBounded(thisReplica.rangeFrom_Replica,
 												   ptrKVServer.rangeFrom_AllReplicas,
 												   ptrKVServer.rangeTo_AllReplicas))) {
