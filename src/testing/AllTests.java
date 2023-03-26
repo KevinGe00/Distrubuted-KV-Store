@@ -40,6 +40,7 @@ public class AllTests {
 	
 	public static Test suite() {
 		TestSuite clientSuite = new TestSuite("Basic Storage ServerTest-Suite");
+		clientSuite.addTestSuite(ECSTest.class);
 		clientSuite.addTestSuite(HashMapTest.class);
 		clientSuite.addTestSuite(ReplicationTest.class);
 		clientSuite.addTestSuite(ConnectionTest.class);
