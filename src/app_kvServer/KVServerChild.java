@@ -5,14 +5,17 @@ import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
 import java.net.Socket;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
 
@@ -274,11 +277,42 @@ public class KVServerChild implements Runnable {
 				try {
 					ConcurrentHashMap<Integer,Replica> replicas = ptrKVServer.getReplicas();
 					boolean found = false;
-					for (Map.Entry<Integer, Replica> entry : replicas.entrySet()) {
+					Replica thisReplica;
+					Iterator<Map.Entry<Integer,Replica>> iter = replicas.entrySet().iterator();
+					while (iter.hasNext()) {
+						Map.Entry<Integer,Replica> entry = iter.next();
+						thisReplica = entry.getValue();
+						/* first, check if any replica is outdated, if so delete them */
+						if ((isBounded(thisReplica.rangeFrom_Replica,
+									   ptrKVServer.rangeFrom_Coordinator,
+									   ptrKVServer.rangeTo_Coordinator))
+							|| (!isBounded(thisReplica.rangeFrom_Replica,
+										   ptrKVServer.rangeFrom_AllReplicas,
+										   ptrKVServer.rangeTo_AllReplicas))) {
+							// this Replica has been outdated, remove this
+							logger.debug("[To Client] >>> Deleting an outdated Replica #"
+										+ thisReplica.port + "...");
+							String folderRemove = thisReplica.dirStore;
+							File foldRemove = new File(folderRemove);
+							if (foldRemove.exists()) {
+								try {
+									File[] files = foldRemove.listFiles();
+									for (File file : files) {
+										file.delete();
+									}
+									foldRemove.delete();
+								} catch (Exception e) {
+									logger.error("[To Client] >>> Exception when deleting outdated store files.", e);
+								}
+							}
+							iter.remove();
+							continue;
+						}
+						
 						if (isBounded(hashedKey,
-									  entry.getValue().rangeFrom_Replica,
-									  entry.getValue().rangeTo_Replica)) {
-							Store repStore = entry.getValue().store;
+									  thisReplica.rangeFrom_Replica,
+									  thisReplica.rangeTo_Replica)) {
+							Store repStore = thisReplica.store;
 							if (valueRecv == null) {
 								/* DELETE */
 								if (repStore.containsKey(keyRecv)) {
@@ -313,10 +347,11 @@ public class KVServerChild implements Runnable {
 					replicas = ptrKVServer.getReplicas();
 					found = false;
 					for (Map.Entry<Integer, Replica> entry : replicas.entrySet()) {
+						thisReplica = entry.getValue();
 						if (isBounded(hashedKey,
-									  entry.getValue().rangeFrom_Replica,
-									  entry.getValue().rangeTo_Replica)) {
-							Store repStore = entry.getValue().store;
+									  thisReplica.rangeFrom_Replica,
+									  thisReplica.rangeTo_Replica)) {
+							Store repStore = thisReplica.store;
 							if (valueRecv == null) {
 								/* DELETE */
 								if (repStore.containsKey(keyRecv)) {
@@ -434,11 +469,42 @@ public class KVServerChild implements Runnable {
 							ConcurrentHashMap<Integer,Replica> replicas = ptrKVServer.getReplicas();
 							boolean found = false;
 							String value = null;
-							for (Map.Entry<Integer, Replica> entry : replicas.entrySet()) {
+							Replica thisReplica;
+							Iterator<Map.Entry<Integer,Replica>> iter = replicas.entrySet().iterator();
+							while (iter.hasNext()) {
+								Map.Entry<Integer,Replica> entry = iter.next();
+								thisReplica = entry.getValue();
+								/* first, check if any replica is outdated, if so delete them */
+								if ((isBounded(thisReplica.rangeFrom_Replica,
+											   ptrKVServer.rangeFrom_Coordinator,
+											   ptrKVServer.rangeTo_Coordinator))
+									|| (!isBounded(thisReplica.rangeFrom_Replica,
+												   ptrKVServer.rangeFrom_AllReplicas,
+												   ptrKVServer.rangeTo_AllReplicas))) {
+									// this Replica has been outdated, remove this
+									logger.debug("[To Client] >>> Deleting an outdated Replica #"
+												+ thisReplica.port + "...");
+									String folderRemove = thisReplica.dirStore;
+									File foldRemove = new File(folderRemove);
+									if (foldRemove.exists()) {
+										try {
+											File[] files = foldRemove.listFiles();
+											for (File file : files) {
+												file.delete();
+											}
+											foldRemove.delete();
+										} catch (Exception e) {
+											logger.error("[To Client] >>> Exception when deleting outdated store files.", e);
+										}
+									}
+									iter.remove();
+									continue;
+								}
+								
 								if (isBounded(hashedKey,
-											entry.getValue().rangeFrom_Replica,
-											entry.getValue().rangeTo_Replica)) {
-									Store repStore = entry.getValue().store;
+											  thisReplica.rangeFrom_Replica,
+											  thisReplica.rangeTo_Replica)) {
+									Store repStore = thisReplica.store;
 									String valueTmp = repStore.get(keyRecv);
 									if (valueTmp == null) {
 										found = found || false;
@@ -461,10 +527,11 @@ public class KVServerChild implements Runnable {
 								replicas = ptrKVServer.getReplicas();
 								found = false;
 								for (Map.Entry<Integer, Replica> entry : replicas.entrySet()) {
+									thisReplica = entry.getValue();
 									if (isBounded(hashedKey,
-												entry.getValue().rangeFrom_Replica,
-												entry.getValue().rangeTo_Replica)) {
-										Store repStore = entry.getValue().store;
+												thisReplica.rangeFrom_Replica,
+												thisReplica.rangeTo_Replica)) {
+										Store repStore = thisReplica.store;
 										String valueTmp = repStore.get(keyRecv);
 										if (valueTmp == null) {
 											found = found || false;

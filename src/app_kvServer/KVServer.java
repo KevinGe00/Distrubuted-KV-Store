@@ -59,12 +59,12 @@ public class KVServer extends Thread implements IKVServer {
 	private ServerSocket serverSocket;
 	// latest server metadata
     private String metadata;
-	private BigInteger rangeFrom_Coordinator;
-	private BigInteger rangeTo_Coordinator;
+	public BigInteger rangeFrom_Coordinator;
+	public BigInteger rangeTo_Coordinator;
 	// latest server metadata_read
 	private String metadata_read;
-	private BigInteger rangeFrom_AllReplicas;
-	private BigInteger rangeTo_AllReplicas;
+	public BigInteger rangeFrom_AllReplicas;
+	public BigInteger rangeTo_AllReplicas;
 	private ConcurrentHashMap<Integer, Replica> replicas;
 
 	/**
