@@ -1,11 +1,8 @@
 package app_kvECS;
 
-import app_kvServer.KVServerChild;
-import app_kvServer.KVServer;
 import ecs.ECSNode;
 import ecs.IECSNode;
 import logger.LogSetup;
-import shared.messages.KVMessage;
 
 import org.apache.commons.cli.*;
 import org.apache.log4j.Level;
@@ -17,15 +14,14 @@ import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ECSClient implements IECSClient {
     /**
@@ -55,36 +51,41 @@ public class ECSClient implements IECSClient {
     private boolean running = true;
     private ServerSocket serverSocket;
     private BufferedReader stdin;
-    public HashMap<String, ChildObject> childObjects;
-    public HashMap<String, String> successors;
-    public HashMap<String, String> predecessors;
-    public HashMap<String, Mailbox> childMailboxs;
+    public ConcurrentHashMap<String, ChildObject> childObjects;
+    public ConcurrentHashMap<String, String> successors;
+    public ConcurrentHashMap<String, String> predecessors;
+    public ConcurrentHashMap<String, Mailbox> childMailboxs;
 
-    public HashMap<BigInteger, IECSNode> getHashRing() {
+    public ConcurrentHashMap<BigInteger, IECSNode> getHashRing() {
         return hashRing;
     }
 
-    private HashMap<BigInteger, IECSNode> hashRing = new HashMap<>();
+    private ConcurrentHashMap<BigInteger, IECSNode> hashRing = new ConcurrentHashMap<>();
     //mapping of KVServers (defined by their IP:Port) and the associated range of hash value
-    private HashMap<String, List<BigInteger>> metadata = new HashMap<>();
+    private ConcurrentHashMap<String, List<BigInteger>> metadata = new ConcurrentHashMap<>();
+    //mapping of KVServers (defined by their IP:Port) and the associated range (including the range of the replicas) of hash value
+    private ConcurrentHashMap<String, List<BigInteger>> metadataWithReplicas = new ConcurrentHashMap<>();
     private ArrayList<Thread> clients = new ArrayList<Thread>();
     public ECSClient(String address, int port) {
         this.address = address;
         this.port = port;
     }
-    public HashMap<String, List<BigInteger>> getMetadata() {
+    public ConcurrentHashMap<String, List<BigInteger>> getMetadata() {
         return metadata;
+    }
+    public ConcurrentHashMap<String, List<BigInteger>> getMetadataRead() {
+        return metadataWithReplicas;
     }
 
     public boolean getRunning(){
         return running;
     }
     /* Port */
-    public HashMap<String, String> getSuccessors(){
+    public ConcurrentHashMap<String, String> getSuccessors(){
         return successors;
     }
 
-    public HashMap<String, String> getPredecessors(){
+    public ConcurrentHashMap<String, String> getPredecessors(){
         return predecessors;
     }
     public int getPort(){
@@ -115,12 +116,12 @@ public class ECSClient implements IECSClient {
         }
 
         // initialize client object(thread + socket) arraylist
-        childObjects = new HashMap<>();
+        childObjects = new ConcurrentHashMap<>();
 
-        successors = new HashMap<>();
-        predecessors = new HashMap<>();
+        successors = new ConcurrentHashMap<>();
+        predecessors = new ConcurrentHashMap<>();
 
-        childMailboxs = new HashMap<>();
+        childMailboxs = new ConcurrentHashMap<>();
     }
 
     /*
@@ -389,6 +390,7 @@ public class ECSClient implements IECSClient {
             String fullAddress =  serverHost + ":" + serverPort;
             BigInteger position = addNewServerNodeToHashRing(serverHost, serverPort, storeDir);
             updateMetadataWithNewNode(fullAddress, position);
+            updateMetadataWithReplicas(fullAddress, false);
             putEmptyMailbox(fullAddress);
             logger.info("Successfully added new server " + serverHost + ":" + serverPort + " to ecs.");
             return true;
@@ -413,6 +415,7 @@ public class ECSClient implements IECSClient {
 
             String removedNodeStoreDir = removeServerNodeFromHashRing(serverHost, serverPort);
             List<BigInteger> removedNodeRange = updateMetadataAfterNodeRemoval(fullAddress);
+            updateMetadataWithReplicas(fullAddress, true);
 
             rn.success = true;
             rn.storeDir = removedNodeStoreDir;
@@ -515,7 +518,61 @@ public class ECSClient implements IECSClient {
         predecessors.put(fullAddress, fullAddress);
     }
 
+    /**
+     * @param fullAddress IP:port of newly added server
+     * @param fullAddress IP:port of newly added server
+     */
+    public void updateMetadataWithReplicas(String fullAddress, boolean removing) {
+        // at this point, updateMetadataWithNewNode or updateMetadataAfterNodeRemoval has already run
 
+        if (metadata.size() <= 3) {
+            // if only 3 or less nodes in ring, each node has copy of every single kv pair in the entire ring
+            for (String key : metadata.keySet()) {
+                List<BigInteger> keyrange = metadata.get(key);
+                BigInteger range_start = keyrange.get(0);
+
+                metadataWithReplicas.put(key, Arrays.asList(range_start, range_start.add(BigInteger.ONE)));
+            }
+
+            if (removing) {
+                metadataWithReplicas.remove(fullAddress);
+            }
+            return;
+        }
+        BigInteger newNodeRangeEnd = metadata.get(fullAddress).get(1);
+
+        String succAddr = successors.get(fullAddress);
+        String succSuccAddr = successors.get(succAddr);
+        BigInteger newNodeSuccRangeEnd = metadata.get(succAddr).get(1);
+        BigInteger newNodeSuccSuccRangeEnd = metadata.get(succSuccAddr).get(1);
+
+        String predAddr = predecessors.get(fullAddress);
+        BigInteger newNodePredRangeEnd = metadata.get(predAddr).get(1);
+
+        // "wide" hashrange includes servers own coordinator range plus the range that it's 2 predecessors cover
+
+        // set new node's "wide" hashrange
+        metadataWithReplicas.put(fullAddress, Arrays.asList(getPredPredRangeStart(fullAddress), newNodeRangeEnd));
+
+        // set new node's pred "wide" hashrange
+        metadataWithReplicas.put(predAddr, Arrays.asList(getPredPredRangeStart(predAddr), newNodePredRangeEnd));
+
+        // set new node's succ "wide" hashrange
+        metadataWithReplicas.put(succAddr, Arrays.asList(getPredPredRangeStart(succAddr), newNodeSuccRangeEnd));
+
+        // set new node's succ succ "wide" hashrange
+        metadataWithReplicas.put(succSuccAddr, Arrays.asList(getPredPredRangeStart(succSuccAddr), newNodeSuccSuccRangeEnd));
+
+        if (removing) {
+            metadataWithReplicas.remove(fullAddress);
+        }
+    }
+
+    private BigInteger getPredPredRangeStart(String fullAddress) {
+        List<BigInteger> predPredRange = metadata.get(predecessors.get(predecessors.get(fullAddress)));
+        return predPredRange.get(0);
+
+    }
     // hash string to MD5 bigint
     private BigInteger hash(String fullAddress) {
         try {

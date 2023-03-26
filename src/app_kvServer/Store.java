@@ -4,6 +4,8 @@ import org.apache.log4j.Logger;
 import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -21,8 +23,8 @@ public class Store {
     public int portStore;
     private String PROMPT;
     private String dirStore;
-    private Map<String, String> kvPairs;
-    private Map<String, ReadWriteLock> fileLocks;
+    private ConcurrentHashMap<String, String> kvPairs;
+    private ConcurrentHashMap<String, ReadWriteLock> fileLocks;
     
     /**
      * Initialize Store which is facilitates the persistence mechanisms
@@ -36,8 +38,8 @@ public class Store {
         this.portStore = portStore;
         this.PROMPT = ">>> Server #" + serverPort + " -> Store #" + portStore + " >>> ";
         this.dirStore = dirStore;
-        kvPairs = new HashMap<>();
-        fileLocks = new HashMap<>();
+        kvPairs = new ConcurrentHashMap<>();
+        fileLocks = new ConcurrentHashMap<>();
 
         initialize();
     }
