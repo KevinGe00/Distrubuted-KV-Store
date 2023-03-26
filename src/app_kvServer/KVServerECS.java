@@ -84,6 +84,7 @@ public class KVServerECS implements Runnable {
 		statusRecv = kvMsgRecv.getStatus();
 		if (statusRecv == StatusType.E2S_INIT_RESPONSE_WITH_META) {
 			valueRecv = kvMsgRecv.getValue(); 	// keyrange metadata
+			// set metadata requires re-initialize store
 			if (!ptrKVServer.setMetadata(valueRecv)) {
 				logger.error("[To ECS] >>> Failed to set metedata with '" + valueRecv 
 							+ "'. Terminating server.");
@@ -161,6 +162,13 @@ public class KVServerECS implements Runnable {
 				}
 				case E2S_UPDATE_META_AND_RUN: {
 					/* update metadata */
+					// set metadata requires store to be reinitialized.
+					ptrKVServer.setSerStatus(SerStatus.STOPPED);
+					try {
+						Thread.sleep(200);
+					} catch (InterruptedException e) {
+						throw new RuntimeException(e);
+					}
 					if (ptrKVServer.setMetadata(valueRecv)) {
 						ptrKVServer.setSerStatus(SerStatus.RUNNING);
 					} else {

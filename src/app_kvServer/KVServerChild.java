@@ -5,15 +5,21 @@ import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
 import java.net.Socket;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 
 import shared.messages.KVMessage;
 import shared.messages.KVMessageInterface.StatusType;
 import app_kvServer.IKVServer.SerStatus;
+import app_kvServer.KVServer.Replica;
 
 /**
  * A runnable class responsible to communicate with the client or ECS,
@@ -64,7 +70,7 @@ public class KVServerChild implements Runnable {
 			KVMessage kvMsgRecv = null;
 			try {
 				// block until receiving response, exception when socket closed
-				kvMsgRecv = receiveKVMessage();
+				kvMsgRecv = receiveKVMessage(input);
 			} catch (Exception e) {
 				logger.error("Exception when receiving message at child socket of server #"
 							+ serverPort+ " connected to IP: '"+ responseIP + "' \t port: "
@@ -91,7 +97,7 @@ public class KVServerChild implements Runnable {
 					 * reply with 'server stopped', as specified in the module
 					 */
 					kvMsgSend.setStatus(StatusType.SERVER_STOPPED);
-					if (!sendKVMessage(kvMsgSend)) {
+					if (!sendKVMessage(kvMsgSend, output)) {
 						close();
 						return;
 					}
@@ -104,7 +110,7 @@ public class KVServerChild implements Runnable {
 				 * reply with 'keyrange success' and latest server metadata
 				 */
 				kvMsgSend.setStatus(StatusType.KEYRANGE_SUCCESS);
-				if (!sendKVMessage(kvMsgSend)) {
+				if (!sendKVMessage(kvMsgSend, output)) {
 					close();
 					return;
 				}
@@ -118,7 +124,7 @@ public class KVServerChild implements Runnable {
 					 * reply with 'server stopped', as specified in the module
 					 */
 					kvMsgSend.setStatus(StatusType.SERVER_STOPPED);
-					if (!sendKVMessage(kvMsgSend)) {
+					if (!sendKVMessage(kvMsgSend, output)) {
 						close();
 						return;
 					}
@@ -131,7 +137,7 @@ public class KVServerChild implements Runnable {
 				 * reply with 'keyrange success' and latest server metadata
 				 */
 				kvMsgSend.setStatus(StatusType.KEYRANGE_READ_SUCCESS);
-				if (!sendKVMessage(kvMsgSend)) {
+				if (!sendKVMessage(kvMsgSend, output)) {
 					close();
 					return;
 				}
@@ -155,7 +161,7 @@ public class KVServerChild implements Runnable {
 				} catch (InterruptedException e) {
 					throw new RuntimeException(e);
 				}
-				if (!ptrKVServer.reInitializeStore()) {
+				if (!ptrKVServer.reInitializeCoordinatorStore()) {
 					/* Fatal error, the shared Store cannot be re-initialized. */
 					ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
 				} else {
@@ -163,8 +169,8 @@ public class KVServerChild implements Runnable {
 				}
 				// one-time connection.
 				try {
-					sendKVMessage(emptyResponse());
-					receiveKVMessage();
+					sendKVMessage(emptyResponse(), output);
+					receiveKVMessage(input);
 				} catch (Exception e) {
 					;
 				} finally {
@@ -185,7 +191,7 @@ public class KVServerChild implements Runnable {
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setStatus(StatusType.SERVER_STOPPED);
 					kvMsgSend.setKey(keyRecv);
-					if (!sendKVMessage(kvMsgSend)) {
+					if (!sendKVMessage(kvMsgSend, output)) {
 						close();
 						return;
 					}
@@ -202,7 +208,7 @@ public class KVServerChild implements Runnable {
 					kvMsgSend.setStatus(StatusType.SERVER_STOPPED);
 					kvMsgSend.setKey(keyRecv);
 					kvMsgSend.setValue(valueRecv);
-					if (!sendKVMessage(kvMsgSend)) {
+					if (!sendKVMessage(kvMsgSend, output)) {
 						close();
 						return;
 					}
@@ -216,7 +222,7 @@ public class KVServerChild implements Runnable {
 					kvMsgSend.setStatus(StatusType.SERVER_WRITE_LOCK);
 					kvMsgSend.setKey(keyRecv);
 					kvMsgSend.setValue(valueRecv);
-					if (!sendKVMessage(kvMsgSend)) {
+					if (!sendKVMessage(kvMsgSend, output)) {
 						close();
 						return;
 					}
@@ -234,7 +240,7 @@ public class KVServerChild implements Runnable {
 					 * reply with latest metadata.
 					 */
 					kvMsgSend.setStatus(StatusType.SERVER_NOT_RESPONSIBLE);
-					if (!sendKVMessage(kvMsgSend)) {
+					if (!sendKVMessage(kvMsgSend, output)) {
 						close();
 						return;
 					}
@@ -249,15 +255,98 @@ public class KVServerChild implements Runnable {
 					 * reply with latest metadata_read.
 					 */
 					kvMsgSend.setStatus(StatusType.SERVER_NOT_RESPONSIBLE);
-					if (!sendKVMessage(kvMsgSend)) {
+					if (!sendKVMessage(kvMsgSend, output)) {
 						close();
 						return;
 					}
 					continue;
 				}
 			}
+
+			// 3. server-to-server PUT propagation
+			if ((statusRecv == StatusType.S2S_SERVER_PUT)
+				&& (serStatus != SerStatus.SHUTTING_DOWN)) {
+				/*
+				 * Server-to-Server PUT Propagation.
+				 * Find the corresponding Replica store, or re-init All Replicas' store
+				 */
+				BigInteger hashedKey = hash(keyRecv);
+				try {
+					ConcurrentHashMap<Integer,Replica> replicas = ptrKVServer.getReplicas();
+					boolean found = false;
+					for (Map.Entry<Integer, Replica> entry : replicas.entrySet()) {
+						if (isBounded(hashedKey,
+									  entry.getValue().rangeFrom_Replica,
+									  entry.getValue().rangeTo_Replica)) {
+							Store repStore = entry.getValue().store;
+							if (valueRecv == null) {
+								/* DELETE */
+								if (repStore.containsKey(keyRecv)) {
+									repStore.delete(keyRecv);
+									logger.debug("[To Client] >>> Propagate-deleted '" + keyRecv + "'");
+								}
+							} else if (!repStore.containsKey(keyRecv)) {
+								/* PUT */
+								repStore.put(keyRecv, valueRecv);
+								logger.debug("[To Client] >>> Propagate-put '" + keyRecv + "'");
+							} else {
+								/* UPDATE */
+								repStore.update(keyRecv, valueRecv);
+								logger.debug("[To Client] >>> Propagate-update '" + keyRecv + "'");
+							}
+							found = true;
+							break;
+						}
+					}
+					if (!found) {
+						replicas = null;
+						logger.debug("[To Client] >>> Cannot find Replica for PUT propagation, "
+									+ "Re-initializing Replicas store...");
+						SerStatus serStatus_Copy = serStatus;
+						ptrKVServer.setSerStatus(SerStatus.STOPPED);
+						ptrKVServer.reInitializeAllReplicasStore();
+						ptrKVServer.setSerStatus(serStatus);
+						logger.debug("[To Client] >>> Replica re-initialization done. Retrying.");
+					} else {
+						close();
+						return;
+					}
+					replicas = ptrKVServer.getReplicas();
+					found = false;
+					for (Map.Entry<Integer, Replica> entry : replicas.entrySet()) {
+						if (isBounded(hashedKey,
+									  entry.getValue().rangeFrom_Replica,
+									  entry.getValue().rangeTo_Replica)) {
+							Store repStore = entry.getValue().store;
+							if (valueRecv == null) {
+								/* DELETE */
+								if (repStore.containsKey(keyRecv)) {
+									repStore.delete(keyRecv);
+								}
+							} else if (!repStore.containsKey(keyRecv)) {
+								/* PUT */
+								repStore.put(keyRecv, valueRecv);
+							} else {
+								/* UPDATE */
+								repStore.update(keyRecv, valueRecv);
+							}
+							found = true;
+							break;
+						}
+					}
+					if (!found) {
+						logger.error("[To Client] >>> Cannot find corresponding Replica even after "
+									+ "re-initialization for PUT propagation.");
+					}
+				} catch (Exception e) {
+					logger.error("[To Client] >>> Exception during receiving PUT propagation.", e);
+				} finally {
+					close();
+					return;
+				}
+			}
 			
-			// 3. normal KV response to client
+			// 4. normal KV response to client
 			switch (statusRecv) {
 				case GET: {
 					KVMessage kvMsgSend = new KVMessage();
@@ -268,7 +357,7 @@ public class KVServerChild implements Runnable {
 						 * reply GET with 'get error' and Key
 						 */
 						kvMsgSend.setStatus(StatusType.GET_ERROR);
-						if (!sendKVMessage(kvMsgSend)) {
+						if (!sendKVMessage(kvMsgSend, output)) {
 							close();
 							return;
 						}
@@ -282,7 +371,7 @@ public class KVServerChild implements Runnable {
 						 * reply GET with 'get success' and Key-Value pair
 						 */
 						kvMsgSend.setStatus(StatusType.GET_SUCCESS);
-						if (!sendKVMessage(kvMsgSend)) {
+						if (!sendKVMessage(kvMsgSend, output)) {
 							close();
 							return;
 						}
@@ -296,7 +385,7 @@ public class KVServerChild implements Runnable {
 									+ serverPort+ " connected to IP: '"
 									+ responseIP + "' \t port: "+ responsePort, e);
 						kvMsgSend.setStatus(StatusType.GET_ERROR);
-						if (!sendKVMessage(kvMsgSend)) {
+						if (!sendKVMessage(kvMsgSend, output)) {
 							close();
 							return;
 						}
@@ -304,6 +393,10 @@ public class KVServerChild implements Runnable {
 					}
 				}
 				case PUT: {
+					// propagate client's PUT request to servers with this Coordinator's Replicas
+					if (!propagatePut(keyRecv, valueRecv)) {
+						logger.error("[To Client] >>> PUT propagation unsuccessful. Continue on.");
+					}
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setKey(keyRecv);
 					/* DELETE */
@@ -314,7 +407,7 @@ public class KVServerChild implements Runnable {
 							 * reply PUT(DELETE) with 'delete success' and Key
 							 */
 							kvMsgSend.setStatus(StatusType.DELETE_SUCCESS);
-							if (!sendKVMessage(kvMsgSend)) {
+							if (!sendKVMessage(kvMsgSend, output)) {
 								close();
 								return;
 							}
@@ -329,7 +422,7 @@ public class KVServerChild implements Runnable {
 							 * reply PUT(DELETE) with 'delete success' and KV pair
 							 */
 							kvMsgSend.setStatus(StatusType.DELETE_SUCCESS);
-							if (!sendKVMessage(kvMsgSend)) {
+							if (!sendKVMessage(kvMsgSend, output)) {
 								close();
 								return;
 							}
@@ -343,7 +436,7 @@ public class KVServerChild implements Runnable {
 										+ "server #" + serverPort+ " connected to IP: '"
 										+ responseIP + "' \t port: "+ responsePort, e);
 							kvMsgSend.setStatus(StatusType.DELETE_ERROR);
-							if (!sendKVMessage(kvMsgSend)) {
+							if (!sendKVMessage(kvMsgSend, output)) {
 								close();
 								return;
 							}
@@ -360,7 +453,7 @@ public class KVServerChild implements Runnable {
 							 * reply PUT(UPDATE) with 'put update' and new KV pair
 							 */
 							kvMsgSend.setStatus(StatusType.PUT_UPDATE);
-							if (!sendKVMessage(kvMsgSend)) {
+							if (!sendKVMessage(kvMsgSend, output)) {
 								close();
 								return;
 							}
@@ -374,7 +467,7 @@ public class KVServerChild implements Runnable {
 										+ "server #" + serverPort+ " connected to IP: '"
 										+ responseIP + "' \t port: "+ responsePort, e);
 							kvMsgSend.setStatus(StatusType.PUT_ERROR);
-							if (!sendKVMessage(kvMsgSend)) {
+							if (!sendKVMessage(kvMsgSend, output)) {
 								close();
 								return;
 							}
@@ -390,7 +483,7 @@ public class KVServerChild implements Runnable {
 						 * reply PUT with 'put success' and the same KV pair
 						 */
 						kvMsgSend.setStatus(StatusType.PUT_SUCCESS);
-						if (!sendKVMessage(kvMsgSend)) {
+						if (!sendKVMessage(kvMsgSend, output)) {
 							close();
 							return;
 						}
@@ -404,7 +497,7 @@ public class KVServerChild implements Runnable {
 									+ "server #" + serverPort+ " connected to IP: '"
 									+ responseIP + "' \t port: "+ responsePort, e);
 						kvMsgSend.setStatus(StatusType.PUT_ERROR);
-						if (!sendKVMessage(kvMsgSend)) {
+						if (!sendKVMessage(kvMsgSend, output)) {
 							close();
 							return;
 						}
@@ -424,6 +517,126 @@ public class KVServerChild implements Runnable {
 		}
 		close();
 		return;
+	}
+
+	/**
+	 * Server's put to update replicas of this coordinator in other server
+	 * @param key client's PUT key
+	 * @param value client's PUT value
+	 * @return true for success, false otherwise
+	 */
+	private boolean propagatePut(String key, String value) {
+		try {
+			boolean isSuccess = true;
+			String meta = ptrKVServer.getMetadata();
+			int portSuccessor = findSuccessorPort(meta, serverPort);
+			if (portSuccessor == serverPort) {
+				// Case: 1 server
+				return isSuccess;
+			}
+			// Cases: 2+ servers
+			logger.debug("[To Client] >>> propagate PUT to #" + portSuccessor);
+			isSuccess = isSuccess && connectAndServerPut(portSuccessor, key, value);
+			int portSSuccessor = findSuccessorPort(meta, portSuccessor);
+			if (portSSuccessor == serverPort) {
+				// Case: 2 servers
+				return isSuccess;
+			}
+			// Cases: 3+ servers
+			logger.debug("[To Client] >>> propagate PUTto #" + portSSuccessor);
+			isSuccess = isSuccess && connectAndServerPut(portSSuccessor, key, value);
+			return isSuccess;
+		} catch (Exception e) {
+			logger.error("[To Client] >>> Exception during PUT propagation. ", e);
+			return false;
+		}
+	}
+
+	/**
+	 * Connect to the listening socket of specified KVServer and send SERVER PUT
+	 * @param port specified KVServer's port
+	 * @param key client's PUT key
+	 * @param value client's PUT value
+	 * @return
+	 */
+	private boolean connectAndServerPut(int port, String key, String value) {
+		try {
+			Socket tSock = new Socket(responseIP, port);
+			tSock.setReuseAddress(true);
+			DataInputStream tInput = new DataInputStream(new BufferedInputStream(tSock.getInputStream()));
+			DataOutputStream tOutput = new DataOutputStream(new BufferedOutputStream(tSock.getOutputStream()));
+			KVMessage kvMsgSend = new KVMessage();
+			kvMsgSend.setStatus(StatusType.S2S_SERVER_PUT);
+			kvMsgSend.setKey(key);
+			kvMsgSend.setValue(value);
+			if (!sendKVMessage(kvMsgSend, tOutput)) {
+				logger.error("[To Client] >>> Cannot contact #" + port + " to propagate PUT.");
+				tSock.close();
+				tSock = null;
+				tInput = null;
+				tOutput = null;
+				return false;
+			}
+			try {
+				// expect target server to close the connection
+				receiveKVMessage(tInput);
+			} catch (Exception e) {
+				logger.debug("[To Client] >>> Finish PUT propagation to server #" + port + ".");
+			} finally {
+				tSock.close();
+				tSock = null;
+				tInput = null;
+				tOutput = null;
+				return true;
+			}
+		} catch (Exception e) {
+			logger.error("[To Client] >>> Exception during connection for propagating PUT.", e);
+		}
+		return false;
+	}
+
+	/**
+	 * Return the port of the succesor of the server with a specific port.
+	 * @param meta metadata
+	 * @param portCurrent port of current server (not necessarily this server)
+	 * @return port of successor server of the specified
+	 */
+	private int findSuccessorPort(String meta, int portCurrent) throws Exception{
+		String[] entries = meta.split(";");
+		String[] elements = entries[0].split(",");
+		if (elements.length != 4) {
+			throw new Exception("Exception! metadata format cannot be recognized!");
+		}
+		String rangeTo_Current_Str = "";
+		for (String entry : entries) {
+			// range_from,range_to,ip,port
+			elements = entry.split(",");
+			if (Integer.parseInt(elements[3]) != portCurrent) {
+				continue;
+			}
+			rangeTo_Current_Str = elements[1];
+			break;
+		}
+		if (rangeTo_Current_Str.equals("")) {
+			throw new Exception("Exception! Cannot find rangeTo of server #" + portCurrent);
+		}
+		BigInteger rangeTo_Current = new BigInteger(rangeTo_Current_Str, 16);
+		BigInteger rangeFrom_Successor;
+		if (rangeTo_Current.equals(new BigInteger("0"))) {
+			rangeFrom_Successor = new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16);
+		} else {
+			rangeFrom_Successor = rangeTo_Current.subtract(new BigInteger("1"));
+		}
+		String rangeFrom_Successor_Str = rangeFrom_Successor.toString(16);
+		for (String entry : entries) {
+			// range_from,range_to,ip,port
+			elements = entry.split(",");
+			if (elements[0].equals(rangeFrom_Successor_Str)) {
+				return Integer.parseInt(elements[3]);
+			}
+		}
+		throw new Exception("Exception! Cannot find rangeFrom '" + rangeFrom_Successor_Str
+							+ "' from metadata.");
 	}
 
 	/**
@@ -458,7 +671,7 @@ public class KVServerChild implements Runnable {
 	 * @param kvMsg a KVMessage object
 	 * @return true for success, false otherwise
 	 */
-	private boolean sendKVMessage(KVMessage kvMsg) {
+	private boolean sendKVMessage(KVMessage kvMsg, DataOutputStream output) {
 		try {
 			kvMsg.logMessageContent(false);
 			byte[] bytes_msg = kvMsg.toBytes();
@@ -467,9 +680,7 @@ public class KVServerChild implements Runnable {
 			output.write(bytes_msg);
 			output.flush();
 		} catch (Exception e) {
-			logger.error("Exception when server #" + serverPort + " sends to IP: '"
-						+ responseIP + "' \t port: " + responsePort
-						+ "\n Should close socket to unblock client's receive().", e);
+			logger.error("[To Client] >>> Unexpected exception in sendKVMessage().", e);
 			return false;
 		}
 		return true;
@@ -480,15 +691,14 @@ public class KVServerChild implements Runnable {
 	 * @return a KVMessage object
 	 * @throws Exception throws exception as closing socket causes receive() to unblock.
 	 */
-	private KVMessage receiveKVMessage() throws Exception {
+	private KVMessage receiveKVMessage(DataInputStream input) throws Exception {
 		KVMessage kvMsg = new KVMessage();
 		// LV structure: length, value
 		int size_bytes = input.readInt();
 		byte[] bytes = new byte[size_bytes];
 		input.readFully(bytes);
 		if (!kvMsg.fromBytes(bytes)) {
-			throw new Exception("#" + serverPort + "-" + responsePort + ": "
-								+ "Cannot convert all received bytes to KVMessage.");
+			throw new Exception("Exception! Cannot convert all bytes to KVMessage!");
 		}
 		kvMsg.logMessageContent(true);
 		return kvMsg;
@@ -499,4 +709,47 @@ public class KVServerChild implements Runnable {
 		kvMsg.setStatus(StatusType.S2E_EMPTY_RESPONSE);
 		return kvMsg;
 	}
+
+	// hash string to MD5 bigint
+    private BigInteger hash(String s) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.update(s.getBytes());
+            byte[] digest = md.digest();
+            return new BigInteger(1, digest);
+        } catch (NoSuchAlgorithmException e) {
+            logger.error(e);
+            throw new RuntimeException(e);
+        }
+    }
+
+	// check BigInteger within bound or not
+	private boolean isBounded(BigInteger number, BigInteger range_from, BigInteger range_to) {
+        /*
+         * Keyrange goes counterclockwise.
+         * With wrap-around:        range_to < FF (<) 0 < range_from < range_to
+         * Without wrap-around:     range_to < range_from
+         */
+        boolean bounded;
+        if (range_from.compareTo(range_to) < 0) {
+            // wrap-around
+            BigInteger minHash = new BigInteger("0", 16);
+            BigInteger maxHash = new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16);
+            if (number.compareTo(range_from) <= 0 && number.compareTo(minHash) >= 0) {
+                bounded = true;
+            } else if (number.compareTo(maxHash) <= 0 && number.compareTo(range_to) >= 0) {
+                bounded = true;
+            } else {
+                bounded = false;
+            }
+        } else {
+            // normal comparison
+            if (number.compareTo(range_from) <= 0 && number.compareTo(range_to) >= 0) {
+                bounded = true;
+            } else {
+                bounded = false;
+            }
+        }
+        return bounded;
+    }
 }

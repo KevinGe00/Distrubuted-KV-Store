@@ -20,6 +20,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.math.BigInteger;
 
 import org.apache.commons.cli.*;
@@ -64,6 +65,7 @@ public class KVServer extends Thread implements IKVServer {
 	private String metadata_read;
 	private BigInteger rangeFrom_AllReplicas;
 	private BigInteger rangeTo_AllReplicas;
+	private ConcurrentHashMap<Integer, Replica> replicas;
 
 	/**
 	 * Initialize a new, stopped KVServer at port
@@ -83,6 +85,7 @@ public class KVServer extends Thread implements IKVServer {
 		rangeFrom_Coordinator = null;
 		rangeTo_Coordinator = null;
 		metadata_read = null;
+		replicas = new ConcurrentHashMap<>();
 	}
 	public KVServer(int port, int cacheSize, String strategy) {
 		status = SerStatus.STOPPED;
@@ -98,6 +101,7 @@ public class KVServer extends Thread implements IKVServer {
 		rangeFrom_Coordinator = null;
 		rangeTo_Coordinator = null;
 		metadata_read = null;
+		replicas = new ConcurrentHashMap<>();
 	}
 
 	/* Server metadata */
@@ -127,7 +131,61 @@ public class KVServer extends Thread implements IKVServer {
 						+ getPort() + ".", e);
 			return false;
 		}
+		// reinitialize Coordinator and Replica store after metadata has been update
+		if (!reInitializeCoordinatorStore()) {
+			return false;
+		}
+		if (!reInitializeAllReplicasStore()) {
+			return false;
+		}
 		return true;
+	}
+	public synchronized boolean reInitializeCoordinatorStore() {
+		try {
+			store = new Store(port, port, dirStore);
+		} catch (Exception e) {
+			logger.error(">>> Fatal exception! Coordinator store cannot be re-initialized.", e);
+			return false;
+		}
+		logger.debug(">>> Server #"+ port + " -> Coordinator re-initialization done.");
+		return true;
+	}
+	public synchronized boolean reInitializeAllReplicasStore() {
+		try {
+			String[] entries = metadata.split(";");
+			for (String entry : entries) {
+				// range_from,range_to,ip,port
+				String[] elements = entry.split(",");
+				if (!isBounded(new BigInteger(elements[1],16),
+								rangeFrom_AllReplicas, rangeTo_AllReplicas)) {
+					continue;
+				}
+				if (Integer.parseInt(elements[3]) == port) {
+					continue;
+				}
+				Replica newReplica = new Replica();
+				newReplica.port = Integer.parseInt(elements[3]);
+				newReplica.dirStore = dirStore.replace("Coordinator", "")
+										+ newReplica.port;
+				newReplica.rangeFrom_Replica = new BigInteger(elements[0], 16);
+				newReplica.rangeTo_Replica = new BigInteger(elements[1], 16);
+				newReplica.store = new Store(port, newReplica.port, newReplica.dirStore);
+				replicas.put(newReplica.port, newReplica);
+			}
+		} catch (Exception e) {
+			logger.error(">>> Exception! Failed to reinitialize Replica stores one-by-one!", e);
+			return false;
+		}
+		logger.debug(">>> Server #" + port + " -> all Replicas re-initialization done.");
+		return true;
+	}
+
+	/**
+	 * Get server's hashmap of replicas (port -> replica)
+	 * @return
+	 */
+	public ConcurrentHashMap<Integer,Replica> getReplicas() {
+		return replicas;
 	}
 	/**
 	 * Get server's latest metadata.
@@ -324,17 +382,6 @@ public class KVServer extends Thread implements IKVServer {
 			return false;
 		}
 		logger.info("Server #"+ port + " disk storage initialization successful.");
-		return true;
-	}
-	public boolean reInitializeStore() {
-		try {
-			store = new Store(port, port, dirStore);
-		} catch (Exception e) {
-			logger.error("Exception when re-initializing server #" + getPort()
-						+ " disk storage.", e);
-			return false;
-		}
-		logger.info("Server #"+ port + " disk storage re-initialization successful.");
 		return true;
 	}
 	@Override

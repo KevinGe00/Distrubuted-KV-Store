@@ -73,6 +73,9 @@ public class ECSClient implements IECSClient {
     public ConcurrentHashMap<String, List<BigInteger>> getMetadata() {
         return metadata;
     }
+    public ConcurrentHashMap<String, List<BigInteger>> getMetadataRead() {
+        return metadataWithReplicas;
+    }
 
     public boolean getRunning(){
         return running;
