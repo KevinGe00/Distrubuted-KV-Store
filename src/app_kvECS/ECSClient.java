@@ -222,6 +222,9 @@ public class ECSClient implements IECSClient {
             String pred_dir = pred.getStoreDir();
             String pred_pred_dir = pred_pred.getStoreDir();
 
+            // 0. In the case of kill, where DN's data has not been moved to coord's folder yet, duplicate copy then exit
+            copyFolder(succ_dir + File.separator + serverPort, pred_dir);
+
 
             // 1. Copy DN's succ's replica of DN's data into DN's succ's replica of DN's pred
             copyFolder(succ_dir + File.separator + serverPort, succ_dir + File.separator + pred.getNodePort());
@@ -337,8 +340,21 @@ public class ECSClient implements IECSClient {
     public static void copyFolder(String source, String destination){
         File sourceFolder = new File(source);
         File destinationFolder = new File(destination);
-        // Do nothing if the source is itself
-        if (getParentPath(source).equals(getParentPath(destination))) {
+        // Do nothing if the destination is it its own port instead of coordinator
+        try {
+            String canonicalPath = destinationFolder.getCanonicalPath();
+            String[] pathSegments = canonicalPath.split("\\" + File.separator);
+            int pathLength = pathSegments.length;
+            if (pathLength >= 2 && pathSegments[pathLength - 1].equals(pathSegments[pathLength - 2])) {
+                logger.debug("Skipping Delete, same replica shouldn't exist in same server, source is: " + source);
+                return;
+            }
+        } catch (IOException e) {
+            logger.debug("Failed to get canonical path");
+            return;
+        }
+        // Do nothing if source and destination are the same
+        if (sourceFolder.getPath().equals(destinationFolder.getPath())) {
             return;
         }
         System.out.println("COPYING FROM " + source + " TO " + destination);
@@ -354,6 +370,10 @@ public class ECSClient implements IECSClient {
         for (String child : sourceFolder.list()) {
             File sourceChild = new File(sourceFolder, child);
             File destinationChild = new File(destinationFolder, child);
+            if (destinationChild.exists()) {
+                System.out.println("File " + destinationChild.toPath() + " already exists. Exiting the function.");
+                return;
+            }
             try {
                 Files.copy(sourceChild.toPath(), destinationChild.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 System.out.println("Copied: " + sourceChild.toPath() + " to " + destinationChild.toPath());
