@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 public class HashMapTest extends TestCase {
     @Test
     public void testSingleServerSuccessor() {
@@ -23,7 +24,7 @@ public class HashMapTest extends TestCase {
         Exception ex = null;
 
         try {
-            HashMap<String, String> successors = AllTests.ecsClient.getSuccessors();
+            ConcurrentHashMap<String, String> successors = AllTests.ecsClient.getSuccessors();
             assert successors.get("localhost:7000") == "localhost:7000";
             System.out.println("SUCCESS: Single server is its own successor");
         } catch (Exception e) {
@@ -39,7 +40,7 @@ public class HashMapTest extends TestCase {
         Exception ex = null;
 
         try {
-            HashMap<String, String> predecessors = AllTests.ecsClient.getPredecessors();
+            ConcurrentHashMap<String, String> predecessors = AllTests.ecsClient.getPredecessors();
             assert predecessors.get("localhost:7000") == "localhost:7000";
             System.out.println("SUCCESS: Single server is its own predecessor");
         } catch (Exception e) {
@@ -58,7 +59,7 @@ public class HashMapTest extends TestCase {
             server2.setHostname("localhost");
             server2.setBootstrapServer("localhost:30000");
             server2.initializeStore("out" + File.separator + server2.getPort() + File.separator + "Coordinator");
-            HashMap<String, String> successors = AllTests.ecsClient.getSuccessors();
+            ConcurrentHashMap<String, String> successors = AllTests.ecsClient.getSuccessors();
             assert successors.get("localhost:7000") == "localhost:7001";
             assert successors.get("localhost:7001") == "localhost:7000";
             System.out.println("SUCCESS: Double servers has the other as its successor.");
@@ -78,7 +79,7 @@ public class HashMapTest extends TestCase {
             server2.setHostname("localhost");
             server2.setBootstrapServer("localhost:30000");
             server2.initializeStore("out" + File.separator + server2.getPort() + File.separator + "Coordinator");
-            HashMap<String, String> predecessors = AllTests.ecsClient.getPredecessors();
+            ConcurrentHashMap<String, String> predecessors = AllTests.ecsClient.getPredecessors();
             assert predecessors.get("localhost:7000") == "localhost:7001";
             assert predecessors.get("localhost:7001") == "localhost:7000";
             System.out.println("SUCCESS: Double servers has the other as its predecessor.");

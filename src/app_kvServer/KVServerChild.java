@@ -157,7 +157,7 @@ public class KVServerChild implements Runnable {
 					ptrKVServer.setSerStatus(SerStatus.STOPPED);
 				}
 				try {
-					Thread.sleep(200);
+					Thread.sleep(50);
 				} catch (InterruptedException e) {
 					throw new RuntimeException(e);
 				}
@@ -263,7 +263,7 @@ public class KVServerChild implements Runnable {
 				}
 			}
 
-			// 3. server-to-server PUT propagation
+			// 3. server-to-server PUT propagation (only put into replicas, impossible to put to coordinator)
 			if ((statusRecv == StatusType.S2S_SERVER_PUT)
 				&& (serStatus != SerStatus.SHUTTING_DOWN)) {
 				/*
@@ -353,13 +353,46 @@ public class KVServerChild implements Runnable {
 					KVMessage kvMsgSend = new KVMessage();
 					kvMsgSend.setKey(keyRecv);
 					if (ptrKVServer.isCoordinatorForKey(keyRecv)) {
-						/* found in Coordinator */
+						/* Coordinator is responsible, check if Coordinator has it */
 						if (!ptrKVServer.inStorage(keyRecv)) {
 							/*
-							* Key does not exist in storage,
-							* reply GET with 'get error' and Key
-							*/
-							kvMsgSend.setStatus(StatusType.GET_ERROR);
+							 * first time not in storage,
+							 * re-init Coordinator store and retry
+							 */
+							SerStatus serStatus_Copy = serStatus;
+							logger.debug("[To Client] >>> GET key not in Coordinator store, "
+										+ "reinitialize Coordinator store in case of unknown file transfer.");
+							ptrKVServer.setSerStatus(SerStatus.STOPPED);
+							try {
+								Thread.sleep(50);
+							} catch (InterruptedException e) {
+								throw new RuntimeException(e);
+							}
+							if (!ptrKVServer.reInitializeCoordinatorStore()) {
+								/* Fatal error, the Store cannot be re-initialized. */
+								ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
+								kvMsgSend.setStatus(StatusType.GET_ERROR);
+							} else {
+								ptrKVServer.setSerStatus(serStatus_Copy);
+								if (ptrKVServer.inStorage(keyRecv)) {
+									/* second time should be in storage, if exists */
+									try {
+										String valueSend = ptrKVServer.getKV(keyRecv);
+										kvMsgSend.setValue(valueSend);
+										kvMsgSend.setStatus(StatusType.GET_SUCCESS);
+									} catch (Exception e) {
+										logger.error("[To Client] >>> Exception in second-try GET.", e);
+										kvMsgSend.setValue(null);
+										kvMsgSend.setStatus(StatusType.GET_ERROR);
+									}
+								} else {
+									/*
+									* Key does not exist in storage,
+									* reply GET with 'get error' and Key
+									*/
+									kvMsgSend.setStatus(StatusType.GET_ERROR);
+								}
+							}
 							if (!sendKVMessage(kvMsgSend, output)) {
 								close();
 								return;
@@ -407,7 +440,7 @@ public class KVServerChild implements Runnable {
 											entry.getValue().rangeTo_Replica)) {
 									Store repStore = entry.getValue().store;
 									String valueTmp = repStore.get(keyRecv);
-									if (value == null) {
+									if (valueTmp == null) {
 										found = found || false;
 										continue;
 									}
@@ -433,7 +466,7 @@ public class KVServerChild implements Runnable {
 												entry.getValue().rangeTo_Replica)) {
 										Store repStore = entry.getValue().store;
 										String valueTmp = repStore.get(keyRecv);
-										if (value == null) {
+										if (valueTmp == null) {
 											found = found || false;
 											continue;
 										}
@@ -477,10 +510,43 @@ public class KVServerChild implements Runnable {
 					if (valueRecv == null) {
 						if (!ptrKVServer.inStorage(keyRecv)) {
 							/*
-							 * KV pair requested to delete does not exist,
-							 * reply PUT(DELETE) with 'delete success' and Key
+							 * first time not in storage,
+							 * re-init Coordinator store and retry
 							 */
-							kvMsgSend.setStatus(StatusType.DELETE_SUCCESS);
+							SerStatus serStatus_Copy = serStatus;
+							logger.debug("[To Client] >>> DELETE key not in Coordinator store, "
+										+ "reinitialize Coordinator store in case of unknown file transfer.");
+							ptrKVServer.setSerStatus(SerStatus.STOPPED);
+							try {
+								Thread.sleep(50);
+							} catch (InterruptedException e) {
+								throw new RuntimeException(e);
+							}
+							if (!ptrKVServer.reInitializeCoordinatorStore()) {
+								/* Fatal error, the Store cannot be re-initialized. */
+								ptrKVServer.setSerStatus(SerStatus.SHUTTING_DOWN);
+								kvMsgSend.setStatus(StatusType.DELETE_ERROR);
+							} else {
+								ptrKVServer.setSerStatus(serStatus_Copy);
+								if (ptrKVServer.inStorage(keyRecv)) {
+									/* second time should be in storage, if exists */
+									try {
+										String value = ptrKVServer.getKV(keyRecv);
+										kvMsgSend.setValue(value);
+										ptrKVServer.putKV(keyRecv, null);
+										kvMsgSend.setStatus(StatusType.DELETE_SUCCESS);
+									} catch (Exception e) {
+										logger.error("[To Client] >>> Exception in second-try DELETE.", e);
+										kvMsgSend.setStatus(StatusType.DELETE_ERROR);
+									}
+								} else {
+									/*
+									* KV pair requested to delete does not exist,
+									* reply PUT(DELETE) with 'delete success' and Key
+									*/
+									kvMsgSend.setStatus(StatusType.DELETE_ERROR);
+								}
+							}
 							if (!sendKVMessage(kvMsgSend, output)) {
 								close();
 								return;
