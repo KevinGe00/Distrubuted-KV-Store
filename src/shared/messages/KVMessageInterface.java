@@ -25,6 +25,86 @@ public interface KVMessageInterface {
 		NOT_SET,			/* Custom: placeholder for new KVMessage */
 
 
+		// ================================================================================================================================
+		/* M4:
+		 * Table, Query + Derived Table (SELECT + FROM)
+		 *  	> table as a KV pair: "key_name" "row_name_I
+		 * 										  row_name_II
+		 * 										  ...
+		 * 										  row_name_X
+		 * 										  
+		 * 										  column_name_A
+		 * 										  column_name_B
+		 * 										  ...
+		 * 										  column_name_Z
+		 * 										  
+		 * 										  value_I_A (can be empty)
+		 * 										  value_I_B
+		 * 										  ...
+		 * 										  value_I_Z
+		 * 										  value_II_A
+		 * 										  value_II_B
+		 * 										  ...
+		 * 										  value_II_Z
+		 * 										  ...
+		 * 										  value_X_A
+		 * 										  value_X_B
+		 * 										  ...
+		 * 										  value_X_Z" 						(connected with System.lineSeperator(), which can be '\n', '\r', or '\n\r')
+		 *  	
+		 * 
+		 * 		> add/update cell in table: TABLE_PUT "key_name" "row_name_VII
+		 * 												   		  column_name_G
+		 * 												   		  value_VII_G" 		(^)
+		 * 		> add/update success: TABLE_PUT_SUCCESS "key_name" "row_name_VII
+		 * 															column_name_G
+		 * 															value_VII_G" 	(^)
+		 * 		> add/update failure: TABLE_PUT_FAILURE "key_name" "row_name_VII
+		 * 															column_name_G
+		 * 															value_VII_G" 	(^)
+		 * 
+		 * 
+		 * 		> remove cell from table: TABLE_DELETE "key_name" "row_name_VII
+		 * 														   column_name_G" 	(^)
+		 * 		> remove success: TABLE_DELETE_SUCCESS "key_name" "row_name_VII
+		 * 														   column_name_G
+		 * 														   value_VII_G" 	(^)
+		 * 		> remove failure: TABLE_DELETE_FAILURE "key_name" "row_name_VII
+		 * 														   column_name_G" 	(^)
+		 * 
+		 * 
+		 * 		> get cell from table: TABLE_GET "key_name" "row_name_VII
+		 * 													 column_name_G" 		(^)
+		 * 		> get success: TABLE_GET_SUCCESS "key_name" "row_name_VII
+		 * 													 column_name_G
+		 * 													 value_VII_G" 			(^)
+		 * 		> get failure: TABLE_GET_FAILURE "key_name" "row_name_VII
+		 * 													 column_name_G" 		(^)
+		 * 
+		 * 
+		 * 		> add/update propagation: S2S_SERVER_TABLE_PUT "key_name" "row_name_VII
+		 * 																   column_name_G
+		 * 																   value_VII_G" 	(^)
+		 * 		> delete propagation: S2S_SERVER_TABLE_DELETE "key_name" "row_name_VII
+		 * 																  column_name_G" 	(^)
+		 */
+		TABLE_PUT,
+		TABLE_PUT_SUCCESS,
+		TABLE_PUT_FAILURE,
+		
+		TABLE_DELETE,
+		TABLE_DELETE_SUCCESS,
+		TABLE_DELETE_FAILURE,
+
+		TABLE_GET,
+		TABLE_GET_SUCCESS,
+		TABLE_GET_FAILURE,
+
+		S2S_SERVER_TABLE_PUT,
+		S2S_SERVER_TABLE_DELETE,
+		// ================================================================================================================================
+
+
 		// a new server starting
 		S2E_INIT_REQUEST_WITH_DIR, 			/* Server -> ECS:  a new server's first message to ECS, with disk directory in Value */
 		E2S_INIT_RESPONSE_WITH_META, 		/* ECS -> Server:  response to prior message, with keyrange metadata in Value */
