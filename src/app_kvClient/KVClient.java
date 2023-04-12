@@ -306,13 +306,13 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                         break;
                     case SERVER_STOPPED:
                         printError("Server is not running, cannot put key-value"
-                                    + " pair: <" + msg.getValue() + ">-<"
+                                    + " pair: <" + msg.getKey() + ">-<"
                                     + msg.getValue()
                                     + ">");
                         break;
                     case SERVER_WRITE_LOCK:
                         printError("Server is locked for WRITE, cannot put key"
-                                    + "-value pair: <" + msg.getValue() + ">-<"
+                                    + "-value pair: <" + msg.getKey() + ">-<"
                                     + msg.getValue()
                                     + ">");
                         break;
@@ -390,11 +390,171 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 printError("'Keyrange_Read' command failure.");
                 logger.error("Client's 'Keyrange_Read' command failed.", e);
             }
+        } else if (tokens[0].equals("table_put")) {
+            /* M4 */
+            if (tokens.length != 5) {
+                printError("Invalid number of parameters! Expect 'table_put key row col value'");
+            }
+            String key = tokens[1];
+            String row = tokens[2];
+            String col = tokens[3];
+            String value = tokens[4];
+            try {
+                // M3 copy
+                switchToTheCoordinator(key);
+                // TABLE_PUT
+                KVMessage msg = client.table_put(key, row, col, value);
+                // M3 copy, TABLE_PUT share this with normal PUT
+                while (needToPutAgain(msg)) {
+                    logger.debug(">>> Updated metadata cache, retrying TABLE_PUT.");
+                    switchToTheCoordinator(key);
+                    msg = client.table_put(key, row, col, value);
+                }
+
+                // M3 copy with slight modification
+                switch (msg.getStatus()) {
+                    case TABLE_PUT_SUCCESS:
+                        System.out.println(PROMPT + "TABLE_PUT succeeded.");
+                        break;
+                    case TABLE_PUT_FAILURE:
+                        printError("Server cannot table_put: <"
+                                    + msg.getKey() + ">-<"
+                                    + msg.getValue() + ">");
+                        break;
+                    case SERVER_STOPPED:
+                        printError("Server is not running, cannot table_put: <"
+                                    + msg.getKey() + ">-<"
+                                    + msg.getValue() + ">");
+                        break;
+                    case SERVER_WRITE_LOCK:
+                        printError("Server is locked for WRITE, cannot table_put: <"
+                                    + msg.getKey() + ">-<"
+                                    + msg.getValue() + ">");
+                        break;
+                    default:
+                        printError("Unexpected server response: <"
+                                    + msg.getStatus().name()
+                                    + ">");
+                        logger.error("The KVMessage from server is not for TABLE_PUT.");
+                }
+            } catch (Exception e) {
+                printError("TABLE_PUT command failure.");
+                logger.error("Client's TABLE_PUT operation failed.", e);
+            }
+        } else if (tokens[0].equals("table_delete")) {
+            /* M4 */
+            if (tokens.length != 4) {
+                printError("Invalid number of parameters! Expect 'table_delete key row col'");
+            }
+            String key = tokens[1];
+            String row = tokens[2];
+            String col = tokens[3];
+            try {
+                // M3 copy
+                switchToTheCoordinator(key);
+                // TABLE_DELETE
+                KVMessage msg = client.table_delete(key, row, col);
+                // M3 copy, TABLE_DELETE share this with normal PUT
+                while (needToPutAgain(msg)) {
+                    logger.debug(">>> Updated metadata cache, retrying TABLE_DELETE.");
+                    switchToTheCoordinator(key);
+                    msg = client.table_delete(key, row, col);
+                }
+
+                // M3 copy with slight modification
+                switch (msg.getStatus()) {
+                    case TABLE_DELETE_SUCCESS:
+                        System.out.println(PROMPT + "TABLE_DELETE succeeded.");
+                        printTableCell(msg.getValue());
+                        break;
+                    case TABLE_DELETE_FAILURE:
+                        printError("Server cannot table_delete: <"
+                                    + msg.getKey() + ">-<"
+                                    + msg.getValue() + ">");
+                        break;
+                    case SERVER_STOPPED:
+                        printError("Server is not running, cannot table_delete: <"
+                                    + msg.getKey() + ">-<"
+                                    + msg.getValue() + ">");
+                        break;
+                    case SERVER_WRITE_LOCK:
+                        printError("Server is locked for WRITE, cannot table_delete: <"
+                                    + msg.getKey() + ">-<"
+                                    + msg.getValue() + ">");
+                        break;
+                    default:
+                        printError("Unexpected server response: <"
+                                    + msg.getStatus().name()
+                                    + ">");
+                        logger.error("The KVMessage from server is not for TABLE_DELETE.");
+                }
+            } catch (Exception e) {
+                printError("TABLE_DELETE command failure.");
+                logger.error("Client's TABLE_DELETE operation failed.", e);
+            }
+        } else if (tokens[0].equals("table_get")) {
+            /* M4 */
+            if (tokens.length != 4) {
+                printError("Invalid number of parameters! Expect 'table_get key row col'");
+            }
+            String key = tokens[1];
+            String row = tokens[2];
+            String col = tokens[3];
+            try{
+                // M3 copy
+                switchToAnyReplica(key);
+                // TABLE_GET
+                KVMessage msg = client.table_get(key, row, col);
+                // M3 copy, TABLE_GET share this with normal GET
+                while (needToGetAgain(msg)) {
+                    logger.debug(">>> Updated metadata_read cache, retrying TABLE_GET.");
+                    switchToAnyReplica(key);
+                    msg = client.table_get(key, row, col);
+                }
+
+                // M3 copy with slight modification
+                switch (msg.getStatus()) {
+                    case TABLE_GET_SUCCESS:
+                        System.out.println(PROMPT + "Got table value:");
+                        printTableCell(msg.getValue());
+                        break;
+                    case TABLE_GET_FAILURE:
+                        printError("Server cannot table_get for key: <"
+                                    + msg.getKey() + "> with ("
+                                    + row + ", " + col + ")");
+                        break;
+                    case SERVER_STOPPED:
+                        printError("Server is not running, cannot table_get for key: <"
+                        + msg.getKey() + "> with ("
+                        + row + ", " + col + ")");
+                        break;
+                    default:
+                        printError("Unexpected server response: <"
+                                    + msg.getStatus().name()
+                                    + ">");
+                        logger.error("The KVMessage from server is not for TABLE_GET.");
+                }
+            } catch (Exception e) {
+                printError("TABLE_GET command failure.");
+                logger.error("Client's TABLE_GET operation failed.", e);
+            }
         } else {
             printError("Unknown command");
             printHelp();
         }
     }
+
+    /* M4 */
+    private void printTableCell(String content) {
+        /* content string structure: "row
+         *                            col
+         *                            value"
+         */
+        String[] row_col_value = content.split(System.lineSeparator());
+        System.out.println(" \t" + row_col_value[1] + System.lineSeparator()
+                           + row_col_value[0] + " \t" + row_col_value[2]);
+    }
+
     @Override
     public void newConnection(String hostname, int port) throws Exception {
         disconnect();

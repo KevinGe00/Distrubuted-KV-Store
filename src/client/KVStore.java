@@ -94,6 +94,61 @@ public class KVStore extends Thread implements KVCommInterface {
 		return receiveKVMessage();
 	}
 
+	/* M4 */
+	public KVMessage table_put(String key, String row, String col, String value) throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		if (!kvMsg.setStatus(StatusType.TABLE_PUT)) {
+			throw new Exception("TABLE_PUT: Cannot set KVMessage's Status to 'TABLE_PUT'.");
+		}
+		if (!kvMsg.setKey(key)) {
+			throw new Exception("TABLE_PUT: Cannot set KVMessage's Key to '" + key + "'.");
+		}
+		String content = row + System.lineSeparator()
+						+ col + System.lineSeparator()
+						+ value;
+		if (!kvMsg.setValue(content)) {
+			throw new Exception("TABLE_PUT: Cannot set KVMessage's Value to '" + content + "'.");
+		}
+		sendKVMessage(kvMsg);
+		return receiveKVMessage();
+	}
+
+	/* M4 */
+	public KVMessage table_delete(String key, String row, String col) throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		if (!kvMsg.setStatus(StatusType.TABLE_DELETE)) {
+			throw new Exception("TABLE_DELETE: Cannot set KVMessage's Status to 'TABLE_DELETE'.");
+		}
+		if (!kvMsg.setKey(key)) {
+			throw new Exception("TABLE_DELETE: Cannot set KVMessage's Key to '" + key + "'.");
+		}
+		String content = row + System.lineSeparator()
+						+ col;
+		if (!kvMsg.setValue(content)) {
+			throw new Exception("TABLE_DELETE: Cannot set KVMessage's Value to '" + content + "'.");
+		}
+		sendKVMessage(kvMsg);
+		return receiveKVMessage();
+	}
+
+	/* M4 */
+	public KVMessage table_get(String key, String row, String col) throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		if (!kvMsg.setStatus(StatusType.TABLE_GET)) {
+			throw new Exception("TABLE_GET: Cannot set KVMessage's Status to 'TABLE_GET'.");
+		}
+		if (!kvMsg.setKey(key)) {
+			throw new Exception("TABLE_GET: Cannot set KVMessage's Key to '" + key + "'.");
+		}
+		String content = row + System.lineSeparator()
+						+ col;
+		if (!kvMsg.setValue(content)) {
+			throw new Exception("TABLE_GET: Cannot set KVMessage's Value to '" + content + "'.");
+		}
+		sendKVMessage(kvMsg);
+		return receiveKVMessage();
+	}
+
 	@Override
 	public KVMessage get(String key) throws Exception {
 		KVMessage kvMsg = new KVMessage();
