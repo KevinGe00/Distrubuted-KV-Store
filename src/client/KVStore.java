@@ -149,6 +149,22 @@ public class KVStore extends Thread implements KVCommInterface {
 		return receiveKVMessage();
 	}
 
+	/* M4 */
+	public KVMessage table_select(String key, String cols_cond_linebreak) throws Exception {
+		KVMessage kvMsg = new KVMessage();
+		if (!kvMsg.setStatus(StatusType.TABLE_SELECT)) {
+			throw new Exception("TABLE_SELECT: Cannot set KVMessage's Status to 'TABLE_SELECT'.");
+		}
+		if (!kvMsg.setKey(key)) {
+			throw new Exception("TABLE_SELECT: Cannot set KVMessage's Key to '" + key + "'.");
+		}
+		if (!kvMsg.setValue(cols_cond_linebreak)) {
+			throw new Exception("TABLE_SELECT: Cannot set KVMessage's Value to '" + cols_cond_linebreak + "'.");
+		}
+		sendKVMessage(kvMsg);
+		return receiveKVMessage();
+	}
+
 	@Override
 	public KVMessage get(String key) throws Exception {
 		KVMessage kvMsg = new KVMessage();

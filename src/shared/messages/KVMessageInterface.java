@@ -102,6 +102,46 @@ public interface KVMessageInterface {
 
 		S2S_SERVER_TABLE_PUT,
 		S2S_SERVER_TABLE_DELETE,
+
+		/* M4:
+		 * table_select column_name_A,column_name_B>50,column_name_C<50 from key_name_1,key_name_2
+		 * as TABLE_SELECT "key_name_1" "column_name_A
+		 * 								 column_name_B>50
+		 * 								 column_name_C<50" 		(^)
+		 * and
+		 * as TABLE_SELECT "key_name_2" "column_name_A
+		 * 								 column_name_B>50
+		 * 								 column_name_C<50" 		(^)
+		 * 
+		 * 
+		 * for table "key_name_1":
+		 * TABLE_SELECT_SUCCESS "key_name_1" "row_name_I
+		 * 									  row_name_II
+		 * 									  ...
+		 * 									  row_name_X
+		 * 
+		 * 									  column_name_A
+		 * 									  column_name_B
+		 * 									  column_name_C
+		 * 
+		 * 									  value_I_A
+		 * 									  value_I_B
+		 * 									  value_I_C
+		 * 									  value_II_A
+		 * 									  value_II_B
+		 * 									  value_II_C
+		 * 									  ...
+		 * 									  value_X_A
+		 * 									  value_X_B
+		 * 									  value_X_C" 		(^)
+		 * or
+		 * TABLE_SELECT_FAILURE "key_name_1" "column_name_A
+		 * 									  column_name_B>50
+		 * 									  column_name_C<50"
+		 */
+		TABLE_SELECT,
+		TABLE_SELECT_SUCCESS,
+		TABLE_SELECT_FAILURE,
 		// ================================================================================================================================
 
 

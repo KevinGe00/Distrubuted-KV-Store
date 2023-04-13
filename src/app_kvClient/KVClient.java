@@ -260,6 +260,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             /* PUT request */
             if ((tokens.length < 2) || (tokens.length > 3)) {
                 printError("Invalid number of parameters!");
+                return;
             }
             String key = tokens[1];
             String value = "";
@@ -394,6 +395,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             /* M4 */
             if (tokens.length != 5) {
                 printError("Invalid number of parameters! Expect 'table_put key row col value'");
+                return;
             }
             String key = tokens[1];
             String row = tokens[2];
@@ -445,6 +447,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             /* M4 */
             if (tokens.length != 4) {
                 printError("Invalid number of parameters! Expect 'table_delete key row col'");
+                return;
             }
             String key = tokens[1];
             String row = tokens[2];
@@ -496,6 +499,7 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             /* M4 */
             if (tokens.length != 4) {
                 printError("Invalid number of parameters! Expect 'table_get key row col'");
+                return;
             }
             String key = tokens[1];
             String row = tokens[2];
@@ -538,10 +542,123 @@ public class KVClient implements ClientSocketListener, IKVClient  {
                 printError("TABLE_GET command failure.");
                 logger.error("Client's TABLE_GET operation failed.", e);
             }
+        } else if (tokens[0].equals("table_select")) {
+            /* M4 */
+            if ((tokens.length != 4) || (!tokens[2].equals("from"))) {
+                printError("Invalid number of parameters! Expect 'table_select col_A,...,col_X>50,col_Y<50 from key_1,...,key_n'");
+                return;
+            }
+            // M4 new
+            String keys_in_one = tokens[3];
+            String cols_cond_linebreak = tokens[1].replace(",", System.lineSeparator());
+            try {
+                String[] keys_array = keys_in_one.split(",");
+                boolean allSuccess = true;
+                ArrayList<String> tables_string = new ArrayList<>();
+
+                // for each key, contact its corresponding server
+                loop: for (String key : keys_array) {
+                    // M3 copy
+                    switchToAnyReplica(key);
+                    // SELECT
+                    KVMessage msg = client.table_select(key, cols_cond_linebreak);
+                    // M3 copy, TABLE_SELECT share this with normal GET
+                    while (needToGetAgain(msg)) {
+                        logger.debug(">>> Updated metadata_read cache, retrying TABLE_SELECT.");
+                        switchToAnyReplica(key);
+                        msg = client.table_select(key, cols_cond_linebreak);
+                    }
+
+                    // M4 new switch
+                    switch (msg.getStatus()) {
+                        case TABLE_SELECT_SUCCESS:
+                            allSuccess = allSuccess && true;
+                            tables_string.add(msg.getValue());
+                            break;
+                        case TABLE_SELECT_FAILURE:
+                            allSuccess = false;
+                            printError("Server cannot table_select: <"
+                                       + msg.getKey() + ">-<" + msg.getValue() + ">");
+                            break loop;
+                        case SERVER_STOPPED:
+                            allSuccess = false;
+                            printError("Server is not running, cannot table_select: <"
+                                       + msg.getKey() + ">-<" + msg.getValue() + ">");
+                            break loop;
+                        default:
+                            allSuccess = false;
+                            printError("Unexpected server response: <"
+                                        + msg.getStatus().name()
+                                        + ">");
+                            logger.error("The KVMessage from server is not for TABLE_SELECT.");
+                            break loop;
+                    }
+                }
+
+                // if all success, print table;
+                // if any failure, error.
+                if (allSuccess) {
+                    System.out.println(PROMPT + "TABLE_SELECT succeeded.");
+                    printAllTables(tables_string);
+                } // error has already been printed, no else
+            } catch (Exception e) {
+                printError("SELECT command failure.");
+                logger.error("Client's SELECT operation failed.", e);
+            }
         } else {
             printError("Unknown command");
             printHelp();
         }
+    }
+
+    /* M4 */
+    private void printAllTables(ArrayList<String> tables_string) {
+        StringBuilder text = new StringBuilder();
+        for (int idx = 0; idx < tables_string.size(); idx++) {
+            String table_string = tables_string.get(idx);
+            String subText = getPrintSingleTable(table_string);
+            if (idx != 0) {
+                // remove column name of later table
+                subText = subText.substring(subText.indexOf(System.lineSeparator())+1);
+            }
+            text.append(subText + System.lineSeparator());
+        }
+        System.out.println(text.toString());
+    }
+
+    /* M4 */
+    private String getPrintSingleTable(String table_string) {
+        String doubleLineSep = System.lineSeparator() + System.lineSeparator();
+        String singleLineSep = System.lineSeparator();
+
+        String[] rows_cols_values = table_string.split(doubleLineSep, 3);
+        String[] rows = rows_cols_values[0].split(singleLineSep);
+        String[] cols = rows_cols_values[1].split(singleLineSep);
+        String[] values = rows_cols_values[2].split(singleLineSep);
+
+        int num_row = rows.length;
+        int num_col = cols.length;
+
+        StringBuilder text = new StringBuilder();
+        
+        // column name line
+        text.append(" ");
+        for (int idx = 0; idx < num_col; idx++) {
+            text.append(" \t" + cols[idx]);
+        }
+
+        // rows
+        for (int idx_row = 0; idx_row < num_row; idx_row++) {
+            text.append(singleLineSep);
+            text.append(rows[idx_row]);
+            // values (in each column)
+            for (int idx_col = 0; idx_col < num_col; idx_col++) {
+                int idx_value = idx_row * num_col + idx_col;
+                text.append(" \t" + values[idx_value]);
+            }
+        }
+
+        return text.toString();
     }
 
     /* M4 */
