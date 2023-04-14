@@ -7,7 +7,7 @@ To run testing: run `ant test` in the project root.
 
 To run the ECS, use java -jar m2-ecs.jar -p -a -ll
 
-To start a server, use java -jar m1-server.jar -p <port number> -a <address> -b <bootstraps server> -l <logPath> -ll <logLevel>
+To start a server, use java -jar m2-server.jar -p <port number> -a <address> -b <bootstrap server> -l <logPath> -ll <logLevel>
   
 To start a client CLI, use java -jar m2-client.jar
 
