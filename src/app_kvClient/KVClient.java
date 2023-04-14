@@ -614,10 +614,15 @@ public class KVClient implements ClientSocketListener, IKVClient  {
     /* M4 */
     private void printAllTables(ArrayList<String> tables_string) {
         StringBuilder text = new StringBuilder();
+        int idx_first = 0;
         for (int idx = 0; idx < tables_string.size(); idx++) {
+            if (tables_string == null) {
+                idx_first = idx_first + 1;
+                continue;
+            }
             String table_string = tables_string.get(idx);
             String subText = getPrintSingleTable(table_string);
-            if (idx != 0) {
+            if (idx != idx_first) {
                 // remove column name of later table
                 subText = subText.substring(subText.indexOf(System.lineSeparator())
                                             + System.lineSeparator().length());

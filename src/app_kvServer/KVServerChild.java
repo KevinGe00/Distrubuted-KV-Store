@@ -280,23 +280,23 @@ public class KVServerChild implements Runnable {
 				if (symbol.equals(">")) {
 					int num_cellValue = Integer.parseInt(cell_value);
 					if (!(num_cellValue > threshold)) {
+						blacklist.add(row_name);
 						ConcurrentHashMap<String, String> row_exist = table_select.get(row_name);
 						if (row_exist == null) {
 							continue;
 						}
 						table_select.remove(row_name);
-						blacklist.add(row_name);
 						continue;
 					}
 				} else if (symbol.equals("<")) {
 					int num_cellValue = Integer.parseInt(cell_value);
 					if (!(num_cellValue < threshold)) {
+						blacklist.add(row_name);
 						ConcurrentHashMap<String, String> row_exist = table_select.get(row_name);
 						if (row_exist == null) {
 							continue;
 						}
 						table_select.remove(row_name);
-						blacklist.add(row_name);
 						continue;
 					}
 				}
