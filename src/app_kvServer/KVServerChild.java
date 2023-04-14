@@ -274,11 +274,21 @@ public class KVServerChild implements Runnable {
 				if (symbol.equals(">")) {
 					int num_cellValue = Integer.parseInt(cell_value);
 					if (!(num_cellValue > threshold)) {
+						ConcurrentHashMap<String, String> row_exist = table_select.get(row_name);
+						if (row_exist == null) {
+							continue;
+						}
+						row_exist.remove(key);
 						continue;
 					}
 				} else if (symbol.equals("<")) {
 					int num_cellValue = Integer.parseInt(cell_value);
 					if (!(num_cellValue < threshold)) {
+						ConcurrentHashMap<String, String> row_exist = table_select.get(row_name);
+						if (row_exist == null) {
+							continue;
+						}
+						row_exist.remove(key);
 						continue;
 					}
 				}
