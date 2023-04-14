@@ -6,7 +6,9 @@ To build: run `ant build-jar` in the project root.
 To run testing: run `ant test` in the project root.
 
 To run the ECS, use java -jar m2-ecs.jar -p -a -ll
-To start a server, use java -jar m1-server.jar -p <port number> -a <address> -b <bootstrap_server> -l <logPath> -ll <logLevel>.
+
+To start a server, use java -jar m1-server.jar -p <port number> -a <address> -b <bootstrap_server> -l <logPath> -ll <logLevel>
+  
 To start a client CLI, use java -jar m2-client.jar
 
 Port numbers between 1024 and 65536 should be used (pick a random port to avoid conflicting with other services.) If you cannot start the server because “Port is already bound!” use a different port number. Avoid hard-coding port numbers for this reason.
