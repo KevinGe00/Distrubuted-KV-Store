@@ -278,7 +278,7 @@ public class KVServerChild implements Runnable {
 						if (row_exist == null) {
 							continue;
 						}
-						row_exist.remove(key);
+						table_select.remove(row_name);
 						continue;
 					}
 				} else if (symbol.equals("<")) {
@@ -288,7 +288,7 @@ public class KVServerChild implements Runnable {
 						if (row_exist == null) {
 							continue;
 						}
-						row_exist.remove(key);
+						table_select.remove(row_name);
 						continue;
 					}
 				}
