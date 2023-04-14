@@ -14,7 +14,9 @@ Port numbers between 1024 and 65536 should be used (pick a random port to avoid 
 An example setup:
 
 Terminal 1: `$ java -jar m2-ecs.jar -p 5000 -a localhost`
+
 Terminal 2: `$ java -jar m2-server.jar -p 5001 -a localhost -b localhost:5000`
+
 Terminal 3: `$ java -jar m2-client.jar`
   
 Log level will be defaulted to ALL.
