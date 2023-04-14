@@ -8,6 +8,7 @@ import java.net.Socket;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
@@ -241,6 +242,8 @@ public class KVServerChild implements Runnable {
 
 		ConcurrentHashMap<String, ConcurrentHashMap<String, String>> table_select = new ConcurrentHashMap<>();
 
+		ArrayList<String> blacklist = new ArrayList<>();
+
 		String[] conditions = valueRecv.split(singleLineSep);
 		// for each condition, seperate it by the '>', '<'
 		for (String condition : conditions) {
@@ -263,6 +266,9 @@ public class KVServerChild implements Runnable {
 			
 			// loop through all rows
 			for (String row_name : table.keySet()) {	
+				if (blacklist.contains(row_name)) {
+					continue;
+				}
 				ConcurrentHashMap<String, String> subtable_row = table.get(row_name); // must exists
 				// get selected column from this row
 				String cell_value = subtable_row.get(key).replace("\r", "").replace("\n", "");
@@ -279,6 +285,7 @@ public class KVServerChild implements Runnable {
 							continue;
 						}
 						table_select.remove(row_name);
+						blacklist.add(row_name);
 						continue;
 					}
 				} else if (symbol.equals("<")) {
@@ -289,6 +296,7 @@ public class KVServerChild implements Runnable {
 							continue;
 						}
 						table_select.remove(row_name);
+						blacklist.add(row_name);
 						continue;
 					}
 				}
