@@ -619,7 +619,8 @@ public class KVClient implements ClientSocketListener, IKVClient  {
             String subText = getPrintSingleTable(table_string);
             if (idx != 0) {
                 // remove column name of later table
-                subText = subText.substring(subText.indexOf(System.lineSeparator())+1);
+                subText = subText.substring(subText.indexOf(System.lineSeparator())
+                                            + System.lineSeparator().length());
             }
             text.append(subText + System.lineSeparator());
         }

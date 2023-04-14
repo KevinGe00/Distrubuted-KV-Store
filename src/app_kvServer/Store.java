@@ -73,7 +73,7 @@ public class Store {
             StringBuilder contents = new StringBuilder();
             String line;
             while ((line = br.readLine()) != null) {
-                contents.append(line).append("\n");
+                contents.append(line).append(System.lineSeparator());
             }
             String result = contents.toString();
             if (!result.equals("")) {
