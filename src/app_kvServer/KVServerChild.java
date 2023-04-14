@@ -265,7 +265,7 @@ public class KVServerChild implements Runnable {
 			for (String row_name : table.keySet()) {	
 				ConcurrentHashMap<String, String> subtable_row = table.get(row_name); // must exists
 				// get selected column from this row
-				String cell_value = subtable_row.get(key);
+				String cell_value = subtable_row.get(key).replace("\r", "").replace("\n", "");
 				// if entry is empty, skip
 				if ((cell_value == null) || (cell_value.equals(" "))) {
 					continue;
